@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"mime"
@@ -47,19 +46,19 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if strings.TrimSpace(modelName) == "" {
 		modelName = "grok-imagine-video"
 	}
-	channel, err := service.SelectModelChannel(modelName)
+	channel, upstreamModel, err := service.SelectModelChannelWithModel(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Authorization", "Bearer "+service.SelectModelChannelAPIKey(channel))
 	copyAIResponse(w, request, nil)
 }
 
@@ -67,35 +66,40 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	body, contentType, modelName, err := readAIRequest(r)
 	if err != nil {
 		log.Printf("AI proxy request read failed: %v", err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
 	user, ok := service.UserFromContext(r.Context())
 	if !ok {
-		Fail(w, "未登录或权限不足")
+		Fail(w, "鏈櫥褰曟垨鏉冮檺涓嶈冻")
 		return
 	}
-	credits, err := service.ModelCost(modelName)
+	credits, err := service.ModelRequestCost(modelName, path, body, contentType)
 	if err != nil {
 		log.Printf("AI proxy read model cost failed: model=%s err=%v", modelName, err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
-	credits *= readAIRequestCount(body, contentType)
-	channel, err := service.SelectModelChannel(modelName)
+	channel, upstreamModel, err := service.SelectModelChannelWithModel(modelName)
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
+		return
+	}
+	body, contentType, err = rewriteAIRequestModel(body, contentType, upstreamModel)
+	if err != nil {
+		log.Printf("AI proxy rewrite model failed: model=%s upstream=%s err=%v", modelName, upstreamModel, err)
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Authorization", "Bearer "+service.SelectModelChannelAPIKey(channel))
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
 	}
@@ -117,7 +121,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 		if onFailure != nil {
 			onFailure()
 		}
-		Fail(w, "AI 接口请求失败")
+		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
 	defer response.Body.Close()
@@ -183,35 +187,71 @@ func readMultipartModel(body []byte, contentType string) string {
 	return ""
 }
 
-func readAIRequestCount(body []byte, contentType string) int {
-	count := 1
+func rewriteAIRequestModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return body, contentType, nil
+	}
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		_, params, err := mime.ParseMediaType(contentType)
-		if err != nil {
-			return count
-		}
-		form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
-		if err != nil {
-			return count
-		}
-		defer form.RemoveAll()
-		if values := form.Value["n"]; len(values) > 0 {
-			_, _ = fmt.Sscan(values[0], &count)
-		}
-	} else {
-		var payload struct {
-			N int `json:"n"`
-		}
-		_ = json.Unmarshal(body, &payload)
-		count = payload.N
+		return rewriteMultipartModel(body, contentType, modelName)
 	}
-	if count < 1 {
-		return 1
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, "", err
 	}
-	return count
+	payload["model"] = modelName
+	nextBody, err := json.Marshal(payload)
+	return nextBody, contentType, err
 }
 
-var errMissingModel = &aiError{"缺少模型名称"}
+func rewriteMultipartModel(body []byte, contentType string, modelName string) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, "", err
+	}
+	form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+	if err != nil {
+		return nil, "", err
+	}
+	defer form.RemoveAll()
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	for key, values := range form.Value {
+		if key == "model" {
+			continue
+		}
+		for _, value := range values {
+			if err := writer.WriteField(key, value); err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if err := writer.WriteField("model", modelName); err != nil {
+		return nil, "", err
+	}
+	for key, files := range form.File {
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return nil, "", err
+			}
+			part, err := writer.CreateFormFile(key, fileHeader.Filename)
+			if err == nil {
+				_, err = io.Copy(part, file)
+			}
+			_ = file.Close()
+			if err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+var errMissingModel = &aiError{"缂哄皯妯″瀷鍚嶇О"}
 
 func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 	if !isArkSeedanceVideo(baseURL, modelName) {
@@ -288,7 +328,7 @@ func aiUpstreamErrorDetail(body []byte) string {
 func friendlyUpstreamError(code string, message string) string {
 	lowerCode := strings.ToLower(strings.TrimSpace(code))
 	if strings.Contains(lowerCode, "inputvideosensitivecontentdetected") || strings.Contains(lowerCode, "privacyinformation") {
-		return strings.TrimSpace(code + " 参考视频疑似包含真人或隐私信息，火山方舟拒绝使用普通 URL 作为真人视频参考；请改用不含真人的视频、官方允许的模型产物，或已授权的 asset:// 素材。原始错误：" + message)
+		return strings.TrimSpace(code + " 鍙傝€冭棰戠枒浼煎寘鍚湡浜烘垨闅愮淇℃伅锛岀伀灞辨柟鑸熸嫆缁濅娇鐢ㄦ櫘閫?URL 浣滀负鐪熶汉瑙嗛鍙傝€冿紱璇锋敼鐢ㄤ笉鍚湡浜虹殑瑙嗛銆佸畼鏂瑰厑璁哥殑妯″瀷浜х墿锛屾垨宸叉巿鏉冪殑 asset:// 绱犳潗銆傚師濮嬮敊璇細" + message)
 	}
 	return ""
 }

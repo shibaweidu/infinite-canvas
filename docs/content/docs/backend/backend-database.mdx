@@ -29,7 +29,7 @@ description: 当前后端主要数据表与字段说明
 
 ### users
 
-系统用户表。用户基础信息、角色、算力点余额和第三方登录标识放在该表中。
+系统用户表。用户基础信息、角色、积分余额和第三方登录标识放在该表中。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -40,12 +40,13 @@ description: 当前后端主要数据表与字段说明
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
-| `credits` | number | 算力点余额 |
+| `credits` | number | 积分余额 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
 | `github_id` | string | GitHub 用户 ID |
 | `linux_do_id` | string | Linux.do 用户 ID |
+| `google_id` | string | Google 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
 | `last_login_at` | string | 最近登录时间 |
@@ -111,13 +112,14 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
 | `auth` | object | 公开登录配置 |
+| `objectStorage` | object | 对象存储公开配置 |
 
 `modelChannel` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `availableModels` | string[] | 系统可用模型列表 |
-| `modelCosts` | object[] | 模型算力点配置 |
+| `modelCosts` | object[] | 模型积分配置 |
 | `defaultModel` | string | 默认模型 |
 | `defaultImageModel` | string | 默认图片模型 |
 | `defaultVideoModel` | string | 默认视频模型 |
@@ -130,13 +132,45 @@ description: 当前后端主要数据表与字段说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 每次后端模型接口调用前预扣的算力点，未配置默认不扣除 |
+| `name` | string | 模型展示名称 |
+| `type` | string | 模型分类：`text`、`image`、`video`、`audio` |
+| `thumbnailUrl` | string | 模型缩略图地址 |
+| `providerDisplayName` | string | 展示用供应商名称 |
+| `description` | string | 模型描述 |
+| `tags` | string[] | 模型标签 |
+| `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `secondCredits` | number | 视频模型每秒扣除的积分 |
 
 `auth.linuxDo` 当前字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `enabled` | bool | 是否开启 Linux.do 登录 |
+
+`auth.emailRegister` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启邮箱/账号密码注册 |
+| `emailRequired` | bool | 注册时邮箱是否必填 |
+| `codeEnabled` | bool | 是否开启注册邮箱验证码；开启后注册必须先发送并填写验证码 |
+
+`auth.google` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启 Google 登录 |
+
+`objectStorage` 公开字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启对象存储 |
+| `provider` | string | 存储供应商标识 |
+| `bucket` | string | Bucket 名称 |
+| `region` | string | Region |
+| `publicUrl` | string | 公开访问地址 |
 
 `private.value` 当前字段：
 
@@ -145,6 +179,7 @@ description: 当前后端主要数据表与字段说明
 | `channels` | object[] | 模型渠道配置列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
 | `auth` | object | 私有登录配置 |
+| `objectStorage` | object | 对象存储私有连接配置 |
 
 `channels` 每项字段：
 
@@ -154,10 +189,29 @@ description: 当前后端主要数据表与字段说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
-| `models` | string[] | 渠道可用模型列表 |
+| `models` | string[] | 渠道已启用模型列表，由 `modelItems` 中启用项同步生成 |
+| `modelItems` | object[] | 渠道模型明细，包含模型展示信息、分类、选择状态、启用状态、计费配置和 API 路由 |
 | `weight` | number | 渠道权重，同一模型命中多个渠道时按权重随机 |
 | `enabled` | bool | 是否启用 |
 | `remark` | string | 备注 |
+
+`modelItems` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `model` | string | 模型 ID |
+| `name` | string | 模型展示名称 |
+| `type` | string | 模型分类：`text`、`image`、`video`、`audio` |
+| `selected` | bool | 是否选入“模型选择”列表；只有已选择模型会进入积分设置 |
+| `enabled` | bool | 是否启用给前台；只有已选择且启用的模型会进入公开可选模型 |
+| `thumbnailUrl` | string | 模型缩略图地址，可保存上传后的 data URL |
+| `providerDisplayName` | string | 前台或后台展示用供应商名称 |
+| `description` | string | 模型描述 |
+| `tags` | string[] | 模型标签 |
+| `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `secondCredits` | number | 视频模型每秒扣除的积分 |
+| `apiRoutes` | object[] | API 路由选项，字段为 `path` 和 `enabled` |
 
 `promptSync` 字段：
 
@@ -173,11 +227,45 @@ description: 当前后端主要数据表与字段说明
 | `clientId` | string | Linux.do OAuth App Client ID |
 | `clientSecret` | string | Linux.do OAuth App Client Secret，后台返回时隐藏 |
 
+`auth.email` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `email.smtpHost` | string | SMTP 服务地址 |
+| `email.smtpPort` | number | SMTP 端口，默认 `587` |
+| `email.smtpUsername` | string | SMTP 用户名 |
+| `email.smtpPassword` | string | SMTP 密码，后台返回时隐藏 |
+| `email.fromEmail` | string | 发件邮箱 |
+| `email.fromName` | string | 发件人名称 |
+| `email.subject` | string | 验证码邮件标题 |
+
+`auth.google` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `clientId` | string | Google OAuth Client ID |
+| `clientSecret` | string | Google OAuth Client Secret，后台返回时隐藏 |
+
+`objectStorage` 私有字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | bool | 是否开启对象存储 |
+| `provider` | string | 存储供应商标识 |
+| `endpoint` | string | S3 兼容 Endpoint |
+| `region` | string | Region |
+| `bucket` | string | Bucket 名称 |
+| `accessKeyId` | string | Access Key ID |
+| `secretAccessKey` | string | Secret Access Key，后台返回时隐藏 |
+| `publicUrl` | string | 公开访问地址 |
+| `prefix` | string | 文件路径前缀 |
+| `forcePathStyle` | bool | 是否使用 path-style 访问 |
+
 后端请求模型时，先按模型名筛选启用且包含该模型的渠道，再按 `weight` 加权随机选择一个渠道。
 
 ### credit_logs
 
-用户算力点变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。
+用户积分变更流水表。当前记录后台手动调整、模型调用预扣和模型调用失败返还。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -185,7 +273,7 @@ description: 当前后端主要数据表与字段说明
 | `user_id` | string | 关联用户 ID |
 | `type` | string | 类型：`admin_adjust`、`ai_consume`、`ai_refund` |
 | `amount` | number | 本次变动数量，增加为正，扣减为负 |
-| `balance` | number | 变动后的用户算力点余额 |
+| `balance` | number | 变动后的用户积分余额 |
 | `related_id` | string | 关联业务 ID，可为空 |
 | `remark` | string | 备注 |
 | `extra` | json | 扩展信息 |

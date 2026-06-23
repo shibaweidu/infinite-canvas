@@ -4,25 +4,20 @@ import { type ReactNode } from "react";
 import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
-import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
+    { value: "1080", label: "1080p" },
     { value: "720", label: "720p" },
     { value: "480", label: "480p" },
 ];
 
-const sizeOptions = [
-    { value: "1280x720", label: "横屏", width: 1280, height: 720 },
-    { value: "720x1280", label: "竖屏", width: 720, height: 1280 },
-    { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
-    { value: "1792x1024", label: "宽屏", width: 1792, height: 1024 },
-    { value: "1024x1792", label: "长图", width: 1024, height: 1792 },
-    { value: "auto", label: "auto", width: 0, height: 0 },
+const orientationOptions: Array<{ value: "landscape" | "portrait"; label: string }> = [
+    { value: "landscape", label: "横屏" },
+    { value: "portrait", label: "竖屏" },
 ];
-
-const secondOptions = [6, 10, 12, 16, 20];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -37,13 +32,21 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
-    const seconds = config.videoSeconds || "6";
-    const size = normalizeVideoSizeValue(config.size);
-    const dimensions = readSizeDimensions(size);
+    const seconds = normalizeVideoSecondsValue(config.videoSeconds);
     const resolution = normalizeVideoResolutionValue(config.vquality);
+    const orientation = readVideoOrientation(config.size);
+    const size = videoSizeForOrientation(resolution, orientation);
+    const dimensions = readSizeDimensions(size);
     const updateDimension = (key: "width" | "height", value: number | null) => {
         const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
         onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
+    };
+    const updateResolution = (value: string) => {
+        onConfigChange("vquality", value);
+        onConfigChange("size", videoSizeForOrientation(value, orientation));
+    };
+    const updateOrientation = (value: "landscape" | "portrait") => {
+        onConfigChange("size", videoSizeForOrientation(resolution, value));
     };
 
     return (
@@ -53,49 +56,41 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => updateResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
                     </div>
                 </SettingGroup>
                 <SettingGroup title="尺寸" color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
-                        <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                        <DimensionInput prefix="W" value={dimensions.width} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                        <span className="text-lg opacity-45">x</span>
+                        <DimensionInput prefix="H" value={dimensions.height} theme={theme} onChange={(value) => updateDimension("height", value)} />
                     </div>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {sizeOptions.map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", item.value)}
-                            >
-                                <SizePreview width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{item.label}</span>
-                                {item.value === "auto" ? null : (
-                                    <span className="text-[11px] leading-none opacity-55">
-                                        {item.value}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {orientationOptions.map((item) => {
+                            const nextSize = videoSizeForOrientation(resolution, item.value);
+                            const preview = readSizeDimensions(nextSize);
+                            return (
+                                <button
+                                    key={item.value}
+                                    type="button"
+                                    className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                    style={{ borderColor: orientation === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => updateOrientation(item.value)}
+                                >
+                                    <SizePreview width={preview.width} height={preview.height} color={theme.node.text} />
+                                    <span>{item.label}</span>
+                                    <span className="text-[11px] leading-none opacity-55">{nextSize}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </SettingGroup>
                 <SettingGroup title="秒数" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {secondOptions.map((value) => (
-                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
-                                {value}s
-                            </OptionPill>
-                        ))}
-                        <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
-                    </div>
+                    <SecondsSlider value={seconds} theme={theme} onChange={(value) => onConfigChange("videoSeconds", String(value))} />
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -174,24 +169,23 @@ export function videoSizeLabel(value: string) {
     const ratio = normalizeSeedanceRatio(value);
     if (value === "adaptive" || value === "auto") return "自适应";
     if (ratio === value) return seedanceRatioOptions.find((item) => item.value === ratio)?.label || ratio;
-    const size = normalizeVideoSizeValue(value);
-    return sizeOptions.find((item) => item.value === size)?.label || size;
+    return readVideoOrientation(value) === "portrait" ? "竖屏" : "横屏";
 }
 
 export function videoSecondsLabel(value: string) {
     if (String(value).trim() === "-1") return "智能";
-    return `${value || "6"}s`;
+    return `${normalizeVideoSecondsValue(value)}s`;
 }
 
 export function normalizeVideoSizeValue(value: string) {
-    if (value === "auto") return "auto";
     if (/^\d+x\d+$/.test(value || "")) return value;
     return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
 }
 
 export function normalizeVideoResolutionValue(value: string) {
-    if (value === "480p" || value === "low") return "480";
-    if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
+    if (value === "480p" || value === "480" || value === "low") return "480";
+    if (value === "1080p" || value === "1080" || value === "high") return "1080";
+    if (value === "720p" || value === "720" || value === "auto" || value === "medium") return "720";
     return value.replace(/p$/i, "") || "720";
 }
 
@@ -214,24 +208,30 @@ function SettingGroup({ title, color, children }: { title: string; color: string
     );
 }
 
-function ResolutionInput({ value, theme, onChange }: { value: string; theme: CanvasTheme; onChange: (value: string) => void }) {
+function SecondsSlider({ value, theme, onChange }: { value: number; theme: CanvasTheme; onChange: (value: number) => void }) {
     return (
-        <label className="flex h-9 overflow-hidden rounded-full border text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
-            <input type="number" min={1} className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />
-            <span className="grid w-7 place-items-center pr-1" style={{ color: theme.node.muted }}>
-                p
-            </span>
-        </label>
+        <div className="space-y-2">
+            <div className="flex items-center gap-3">
+                <input type="range" min={1} max={15} value={value} className="h-2 min-w-0 flex-1 cursor-pointer accent-current" style={{ color: theme.node.text }} onChange={(event) => onChange(Number(event.target.value) || 1)} onMouseDown={(event) => event.stopPropagation()} />
+                <span className="grid h-9 w-16 place-items-center rounded-full border text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                    {value}s
+                </span>
+            </div>
+            <div className="flex justify-between px-1 text-[11px]" style={{ color: theme.node.muted }}>
+                <span>1s</span>
+                <span>15s</span>
+            </div>
+        </div>
     );
 }
 
-function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; onChange: (value: number | null) => void }) {
+function DimensionInput({ prefix, value, theme, onChange }: { prefix: string; value: number; theme: CanvasTheme; onChange: (value: number | null) => void }) {
     return (
-        <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text, opacity: disabled ? 0.55 : 1 }}>
+        <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
             <span className="grid w-9 place-items-center" style={{ color: theme.node.muted }}>
                 {prefix}
             </span>
-            <input type="number" min={1} disabled={disabled} className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || null)} onMouseDown={(event) => event.stopPropagation()} />
+            <input type="number" min={1} className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || null)} onMouseDown={(event) => event.stopPropagation()} />
         </label>
     );
 }
@@ -243,8 +243,8 @@ function NumberInput({ value, min, max, theme, onChange }: { value: string; min:
 function SizePreview({ width, height, color }: { width: number; height: number; color: string }) {
     if (!width || !height) return null;
     const longSide = Math.max(width, height);
-    const previewWidth = Math.max(10, Math.round((width / longSide) * 26));
-    const previewHeight = Math.max(10, Math.round((height / longSide) * 26));
+    const previewWidth = Math.max(10, Math.round((width / longSide) * 28));
+    const previewHeight = Math.max(10, Math.round((height / longSide) * 28));
     return <span className="rounded-[3px] border-2" style={{ width: previewWidth, height: previewHeight, borderColor: color }} />;
 }
 
@@ -271,8 +271,23 @@ function SwitchRow({ label, checked, theme, onChange }: { label: string; checked
     );
 }
 
+function readVideoOrientation(size: string): "landscape" | "portrait" {
+    const dimensions = readSizeDimensions(normalizeVideoSizeValue(size));
+    return dimensions.height > dimensions.width ? "portrait" : "landscape";
+}
+
+function videoSizeForOrientation(resolution: string, orientation: "landscape" | "portrait") {
+    const height = resolution === "1080" ? 1080 : resolution === "480" ? 480 : 720;
+    const width = Math.round(((height * 16) / 9) / 2) * 2;
+    return orientation === "portrait" ? `${height}x${width}` : `${width}x${height}`;
+}
+
+function normalizeVideoSecondsValue(value: string) {
+    const seconds = Math.floor(Number(value) || 6);
+    return Math.max(1, Math.min(15, seconds));
+}
+
 function readSizeDimensions(size: string) {
-    if (size === "auto") return { width: 0, height: 0 };
     const match = size.match(/^(\d+)x(\d+)$/);
     return { width: Number(match?.[1]) || 1280, height: Number(match?.[2]) || 720 };
 }

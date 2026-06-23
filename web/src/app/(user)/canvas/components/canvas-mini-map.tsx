@@ -115,7 +115,7 @@ export function Minimap({ nodes, viewport, viewportSize, onViewportChange }: { n
             >
                 {nodes.map((node) => {
                     const pos = toMinimap(node.position.x, node.position.y);
-                    const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : theme.node.muted;
+                    const color = node.type === CanvasNodeType.Image ? "#10b981" : node.type === CanvasNodeType.Video ? "#f97316" : node.type === CanvasNodeType.Audio ? "#a855f7" : node.type === CanvasNodeType.Config ? "#60a5fa" : node.type === CanvasNodeType.Agent ? "#f59e0b" : node.type === CanvasNodeType.ScriptAgent ? "#d97706" : node.type === CanvasNodeType.CharacterAgent ? "#b45309" : node.type === CanvasNodeType.StoryboardAgent ? "#ef4444" : node.type === CanvasNodeType.ProjectBrief ? "#38bdf8" : node.type === CanvasNodeType.SubjectBoard ? "#14b8a6" : node.type === CanvasNodeType.Storyboard ? "#ef4444" : theme.node.muted;
                     return (
                         <div
                             key={node.id}

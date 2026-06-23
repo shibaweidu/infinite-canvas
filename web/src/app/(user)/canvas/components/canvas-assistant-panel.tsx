@@ -157,7 +157,7 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, sessions, activeS
         const userMessage: CanvasAssistantMessage = { id: nanoid(), role: "user", mode: nextMode, text, references: refs };
         const assistantId = nanoid();
         appendMessage(session.id, userMessage);
-        appendMessage(session.id, { id: assistantId, role: "assistant", mode: nextMode, text: nextMode === "image" ? "正在生成图片" : "正在回答", isLoading: true });
+        appendMessage(session.id, { id: assistantId, role: "assistant", mode: nextMode, text: nextMode === "image" ? "正在生成图片" : "", isLoading: true });
         setPrompt("");
         setIsRunning(true);
 
@@ -515,16 +515,10 @@ function AssistantMessages({
                         className="max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-6"
                         style={message.role === "user" ? { background: theme.toolbar.activeBg, color: theme.toolbar.activeText } : { background: theme.node.fill, color: theme.node.text }}
                     >
-                        {message.role === "assistant" ? (
-                            <div className="mb-1 flex items-center gap-1.5 text-xs opacity-60">
-                                <MessageSquare className="size-3.5" />
-                                回答
-                            </div>
-                        ) : null}
-                        {message.text}
+                        {message.text || (message.isLoading && message.mode !== "image" ? "正在回答" : "")}
                     </div>
                     {message.references?.length ? <MessageReferences message={message} /> : null}
-                    {message.isLoading ? <ImageGenerationPending compact label={message.mode === "image" ? "正在生成图片" : "正在回答"} className="w-[250px] rounded-2xl border" /> : null}
+                    {message.isLoading && message.mode === "image" ? <ImageGenerationPending compact label="正在生成图片" className="w-[250px] rounded-2xl border" /> : null}
                     {message.role === "assistant" && !message.isLoading ? (
                         <div className="flex gap-1">
                             <Button shape="circle" size="small" style={{ borderColor: theme.node.stroke }} icon={<RotateCcw className="size-3.5" />} onClick={() => onRetry(message)} title="重试" />
@@ -633,7 +627,7 @@ function nodeToReference(node: CanvasNodeData): CanvasAssistantReference | null 
     if (node.type === CanvasNodeType.Image && node.metadata?.content) {
         return { id: node.id, type: node.type, title: node.title, dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
     }
-    if (node.type === CanvasNodeType.Text && node.metadata?.content) {
+    if ((node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Agent || node.type === CanvasNodeType.ScriptAgent || node.type === CanvasNodeType.CharacterAgent || node.type === CanvasNodeType.StoryboardAgent) && node.metadata?.content) {
         return { id: node.id, type: node.type, title: node.title, text: node.metadata.content };
     }
     return null;

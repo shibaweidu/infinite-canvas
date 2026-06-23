@@ -1,14 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,16 +67,12 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 }
 
 func normalizeSettings(settings model.Settings) model.Settings {
+	settings.Public = normalizePublicSetting(settings.Public)
 	settings.Private = normalizePrivateSetting(settings.Private)
-	settings.Public = normalizePublicSettingWithChannels(settings.Public, settings.Private.Channels)
-	return settings
+	return syncPublicModelChannel(settings)
 }
 
 func normalizePublicSetting(setting model.PublicSetting) model.PublicSetting {
-	return normalizePublicSettingWithChannels(setting, nil)
-}
-
-func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []model.ModelChannel) model.PublicSetting {
 	if setting.ModelChannel.AvailableModels == nil {
 		setting.ModelChannel.AvailableModels = []string{}
 	}
@@ -80,10 +80,7 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		setting.ModelChannel.ModelCosts = []model.ModelCost{}
 	}
 	for i := range setting.ModelChannel.ModelCosts {
-		setting.ModelChannel.ModelCosts[i].Model = strings.TrimSpace(setting.ModelChannel.ModelCosts[i].Model)
-		if setting.ModelChannel.ModelCosts[i].Credits < 0 {
-			setting.ModelChannel.ModelCosts[i].Credits = 0
-		}
+		setting.ModelChannel.ModelCosts[i] = normalizeModelCost(setting.ModelChannel.ModelCosts[i])
 	}
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
@@ -93,17 +90,330 @@ func normalizePublicSettingWithChannels(setting model.PublicSetting, channels []
 		enabled := true
 		setting.Auth.AllowRegister = &enabled
 	}
-	enabledModels := enabledChannelModels(channels)
-	if len(enabledModels) > 0 {
-		setting.ModelChannel.AvailableModels = enabledModels
-	} else {
-		setting.ModelChannel.AvailableModels = uniqueModelNames(setting.ModelChannel.AvailableModels)
+	if setting.Auth.EmailRegister.Enabled == nil {
+		enabled := true
+		setting.Auth.EmailRegister.Enabled = &enabled
 	}
-	setting.ModelChannel.DefaultTextModel = repairDefaultModel(setting.ModelChannel.DefaultTextModel, setting.ModelChannel.AvailableModels, isTextModelName)
-	setting.ModelChannel.DefaultImageModel = repairDefaultModel(setting.ModelChannel.DefaultImageModel, setting.ModelChannel.AvailableModels, isImageModelName)
-	setting.ModelChannel.DefaultVideoModel = repairDefaultModel(setting.ModelChannel.DefaultVideoModel, setting.ModelChannel.AvailableModels, isVideoModelName)
-	setting.ModelChannel.DefaultModel = repairDefaultModel(setting.ModelChannel.DefaultModel, setting.ModelChannel.AvailableModels, isTextModelName)
+	if setting.Auth.EmailRegister.EmailRequired == nil {
+		enabled := false
+		setting.Auth.EmailRegister.EmailRequired = &enabled
+	}
+	if setting.Auth.EmailRegister.CodeEnabled == nil {
+		enabled := false
+		setting.Auth.EmailRegister.CodeEnabled = &enabled
+	}
+	setting.ProjectBrief = normalizeProjectBriefSetting(setting.ProjectBrief)
+	setting.Site = normalizeSiteSetting(setting.Site)
 	return setting
+}
+
+func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
+	defaults := defaultSiteSetting()
+	setting.LogoURL = strings.TrimSpace(setting.LogoURL)
+	if setting.LogoURL == "" {
+		setting.LogoURL = defaults.LogoURL
+	}
+	setting.Name = strings.TrimSpace(setting.Name)
+	if setting.Name == "" {
+		setting.Name = defaults.Name
+	}
+	setting.Slogan = strings.TrimSpace(setting.Slogan)
+	if setting.Navigation == nil {
+		setting.Navigation = defaults.Navigation
+		return setting
+	}
+	items := make([]model.SiteNavigationItem, 0, len(setting.Navigation))
+	for index, item := range setting.Navigation {
+		item.ID = strings.TrimSpace(item.ID)
+		item.Label = strings.TrimSpace(item.Label)
+		item.Path = strings.TrimSpace(item.Path)
+		if item.ID == "" {
+			item.ID = fmt.Sprintf("nav-%d", index+1)
+		}
+		if item.Path != "" && !strings.HasPrefix(item.Path, "/") && !strings.HasPrefix(item.Path, "http://") && !strings.HasPrefix(item.Path, "https://") {
+			item.Path = "/" + item.Path
+		}
+		if item.Label != "" && item.Path != "" {
+			items = append(items, item)
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].Sort < items[j].Sort
+	})
+	setting.Navigation = items
+	return setting
+}
+
+func defaultSiteSetting() model.SiteSetting {
+	return model.SiteSetting{
+		LogoURL: "/logo.svg",
+		Name:    "无限画布",
+		Slogan:  "AI 创意工作台",
+		Navigation: []model.SiteNavigationItem{
+			{ID: "canvas", Label: "我的画布", Path: "/canvas", Enabled: true, Sort: 10},
+			{ID: "image", Label: "生图工作台", Path: "/image", Enabled: true, Sort: 20},
+			{ID: "video", Label: "视频创作台", Path: "/video", Enabled: true, Sort: 30},
+			{ID: "prompts", Label: "提示词库", Path: "/prompts", Enabled: true, Sort: 40},
+			{ID: "assets", Label: "我的素材", Path: "/assets", Enabled: true, Sort: 50},
+		},
+	}
+}
+
+func normalizeProjectBriefSetting(setting model.ProjectBriefSetting) model.ProjectBriefSetting {
+	defaults := defaultProjectBriefSetting()
+	if setting.Genres == nil {
+		setting.Genres = defaults.Genres
+	} else {
+		setting.Genres = cleanStrings(setting.Genres)
+	}
+	if setting.StyleCategories == nil {
+		setting.StyleCategories = defaults.StyleCategories
+	} else {
+		setting.StyleCategories = cleanStrings(setting.StyleCategories)
+	}
+	styles := make([]model.ProjectVisualStyle, 0, len(setting.VisualStyles))
+	if setting.VisualStyles == nil {
+		styles = defaults.VisualStyles
+	} else {
+		for _, item := range setting.VisualStyles {
+			item.Category = strings.TrimSpace(item.Category)
+			item.Name = strings.TrimSpace(item.Name)
+			item.Prompt = strings.TrimSpace(item.Prompt)
+			item.CoverURL = strings.TrimSpace(item.CoverURL)
+			item.PreviewURLs = cleanStrings(item.PreviewURLs)
+			if item.Name != "" {
+				styles = append(styles, item)
+			}
+		}
+	}
+	setting.VisualStyles = styles
+	presets := make([]model.ProjectStoryPreset, 0, len(setting.StoryPresets))
+	if setting.StoryPresets == nil {
+		presets = defaults.StoryPresets
+	} else {
+		for _, item := range setting.StoryPresets {
+			item.Title = strings.TrimSpace(item.Title)
+			item.Text = strings.TrimSpace(item.Text)
+			if item.Title != "" && item.Text != "" {
+				presets = append(presets, item)
+			}
+		}
+	}
+	setting.StoryPresets = presets
+	return setting
+}
+
+func defaultProjectBriefSetting() model.ProjectBriefSetting {
+	return model.ProjectBriefSetting{
+		Genres:          []string{"科幻", "悬疑", "爱情", "冒险", "奇幻", "都市", "广告", "儿童动画", "纪录片"},
+		StyleCategories: []string{"我的风格", "最近使用", "立体风格", "国风", "IP风格", "欧美风格", "日系风格", "插画风格", "韩系", "可爱Q版"},
+		VisualStyles: []model.ProjectVisualStyle{
+			{
+				Name:     "KpopCG",
+				Category: "韩系",
+				Prompt:   "韩系偶像写真质感，精致妆造，高饱和舞台光，商业 CG 渲染。",
+				CoverURL: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpo9im1_39c786142b2473e8.webp",
+				PreviewURLs: []string{
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnojtb8n_3114dbe29e4fedbc.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpo9im1_39c786142b2473e8.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnojr8e9_5d62e6aa1dc41c5e.webp",
+				},
+			},
+			{
+				Name:     "游戏CG",
+				Category: "立体风格",
+				Prompt:   "高品质游戏 CG，电影级布光，细节丰富，空间层次清晰。",
+				CoverURL: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FNhe9bnBOkoh8LSxYaG7cMct7nDg.webp",
+				PreviewURLs: []string{
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmn2tgtajad1a164ac3985264.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FEW0XbyTnUoZX44xcI1vcRtMcnjd.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FSnaobGxSHoLVIXxFlOUc5QgEnBc.webp",
+				},
+			},
+			{
+				Name:     "像素农场",
+				Category: "可爱Q版",
+				Prompt:   "可爱像素农场风，Q 版角色，明亮色彩，轻松治愈的游戏画面。",
+				CoverURL: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps4e2n_f772bf318499f660.webp",
+				PreviewURLs: []string{
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpsa9ba_121507cc8417d426.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps84h8_04377ac124a68cc7.webp",
+					"/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps8fah_869571d3fa0df2a2.webp",
+				},
+			},
+			{Name: "国风水墨", Category: "国风", Prompt: "国风水墨，美术留白，柔和宣纸肌理，东方诗意构图。", CoverURL: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmmybot0eaa74e8f640da0bf4.webp"},
+			{Name: "电影感", Category: "欧美风格", Prompt: "电影级摄影，真实光影，浅景深，情绪化色彩分级。"},
+			{Name: "皮克斯3D", Category: "IP风格", Prompt: "皮克斯式 3D 动画质感，圆润造型，表情夸张，温暖光线。"},
+			{Name: "赛博朋克", Category: "插画风格", Prompt: "赛博朋克霓虹城市，高对比光影，未来科技元素，雨夜反射。"},
+			{Name: "日系动画", Category: "日系风格", Prompt: "日系动画分镜，清爽线条，柔和天空光，细腻青春氛围。"},
+		},
+		StoryPresets: []model.ProjectStoryPreset{
+			{Title: "科幻追逐", Text: "一个年轻程序员深夜发现自己开发的 AI 正在现实世界中追捕他，他必须在黎明前关闭系统。"},
+			{Title: "温情治愈", Text: "一个长期独处的人在一次意外相遇后，重新学会与他人建立连接，并找回生活的温度。"},
+			{Title: "悬疑反转", Text: "主角接到一条来自未来的警告信息，循着线索调查后发现真正的危险来自自己最信任的人。"},
+			{Title: "产品广告", Text: "通过一个高压工作日中的小困境，展示产品如何自然地解决问题，并让生活变得更轻松。"},
+			{Title: "儿童冒险", Text: "几个孩子在普通街区发现一扇通往奇妙世界的小门，必须合作帮助一位迷路的朋友回家。"},
+			{Title: "灾难逃生", Text: "城市突然陷入危机，主角带着重要线索穿越混乱街区，寻找唯一能阻止灾难扩大的方法。"},
+		},
+	}
+}
+
+func syncPublicModelChannel(settings model.Settings) model.Settings {
+	costs := map[string]model.ModelCost{}
+	availableModels := []string{}
+	for _, channel := range settings.Private.Channels {
+		if !channel.Enabled {
+			continue
+		}
+		for _, item := range channel.ModelItems {
+			if !item.Selected || !item.Enabled || strings.TrimSpace(item.Model) == "" {
+				continue
+			}
+			modelID := publicModelID(channel, item)
+			availableModels = append(availableModels, modelID)
+			cost := modelItemCost(item, channel)
+			if existing, ok := costs[modelID]; ok {
+				costs[modelID] = mergeModelCost(existing, cost)
+			} else {
+				costs[modelID] = cost
+			}
+		}
+	}
+	models := uniqueStrings(availableModels)
+	modelCosts := make([]model.ModelCost, 0, len(models))
+	textModels := []string{}
+	imageModels := []string{}
+	videoModels := []string{}
+	for _, modelName := range models {
+		cost := costs[modelName]
+		modelCosts = append(modelCosts, cost)
+		switch cost.Type {
+		case model.ModelTypeImage:
+			imageModels = append(imageModels, modelName)
+		case model.ModelTypeVideo:
+			videoModels = append(videoModels, modelName)
+		default:
+			textModels = append(textModels, modelName)
+		}
+	}
+	settings.Public.ModelChannel.AvailableModels = models
+	settings.Public.ModelChannel.ModelCosts = modelCosts
+	settings.Public.ModelChannel.DefaultModel = pickDefaultModel(settings.Public.ModelChannel.DefaultModel, models)
+	settings.Public.ModelChannel.DefaultTextModel = pickDefaultModel(settings.Public.ModelChannel.DefaultTextModel, fallbackModels(textModels, models))
+	settings.Public.ModelChannel.DefaultImageModel = pickDefaultModel(settings.Public.ModelChannel.DefaultImageModel, fallbackModels(imageModels, models))
+	settings.Public.ModelChannel.DefaultVideoModel = pickDefaultModel(settings.Public.ModelChannel.DefaultVideoModel, fallbackModels(videoModels, models))
+	settings.Public.ObjectStorage = publicObjectStorageSetting(settings.Private.ObjectStorage)
+	return settings
+}
+
+func publicObjectStorageSetting(setting model.ObjectStorageSetting) model.PublicObjectStorageSetting {
+	setting = normalizeObjectStorageSetting(setting)
+	return model.PublicObjectStorageSetting{
+		Enabled:   setting.Enabled,
+		Provider:  setting.Provider,
+		Bucket:    setting.Bucket,
+		Region:    setting.Region,
+		PublicURL: setting.PublicURL,
+	}
+}
+
+func modelItemCost(item model.ModelItem, channel model.ModelChannel) model.ModelCost {
+	providerName := strings.TrimSpace(channel.Name)
+	providerEndpoint := normalizeModelChannelBaseURL(channel.BaseURL)
+	return normalizeModelCost(model.ModelCost{
+		Model:               publicModelID(channel, item),
+		UpstreamModel:       item.Model,
+		Name:                item.Name,
+		Type:                item.Type,
+		ThumbnailURL:        item.ThumbnailURL,
+		ProviderName:        providerName,
+		ProviderEndpoint:    providerEndpoint,
+		ProviderDisplayName: firstNonEmpty(item.ProviderDisplayName, providerName),
+		Description:         item.Description,
+		Tags:                item.Tags,
+		Credits:             item.Credits,
+		ResolutionCosts:     item.ResolutionCosts,
+		SecondCredits:       item.SecondCredits,
+	})
+}
+
+func mergeModelCost(base model.ModelCost, next model.ModelCost) model.ModelCost {
+	base = normalizeModelCost(base)
+	next = normalizeModelCost(next)
+	if base.Name == "" || base.Name == base.Model {
+		base.Name = firstNonEmpty(next.Name, base.Name)
+	}
+	if base.Type == "" {
+		base.Type = next.Type
+	}
+	if base.ThumbnailURL == "" {
+		base.ThumbnailURL = next.ThumbnailURL
+	}
+	base.ProviderDisplayName = joinUniqueLabels(base.ProviderDisplayName, next.ProviderDisplayName)
+	if base.Description == "" {
+		base.Description = next.Description
+	} else if next.Description != "" && !strings.Contains(base.Description, next.Description) {
+		base.Description += "\n" + next.Description
+	}
+	base.Tags = uniqueStrings(append(base.Tags, next.Tags...))
+	if base.Credits <= 0 {
+		base.Credits = next.Credits
+	}
+	if len(base.ResolutionCosts) == 0 {
+		base.ResolutionCosts = next.ResolutionCosts
+	}
+	if base.SecondCredits <= 0 {
+		base.SecondCredits = next.SecondCredits
+	}
+	return normalizeModelCost(base)
+}
+
+func joinUniqueLabels(values ...string) string {
+	labels := []string{}
+	for _, value := range values {
+		for _, item := range strings.Split(value, " / ") {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				labels = append(labels, item)
+			}
+		}
+	}
+	return strings.Join(uniqueStrings(labels), " / ")
+}
+
+func publicModelID(channel model.ModelChannel, item model.ModelItem) string {
+	parts := []string{
+		strings.TrimSpace(channel.Name),
+		normalizeModelChannelBaseURL(channel.BaseURL),
+		strings.TrimSpace(item.Model),
+	}
+	return strings.Join(parts, "||")
+}
+
+func publicModelUpstreamName(item model.ModelCost, fallback string) string {
+	if strings.TrimSpace(item.UpstreamModel) != "" {
+		return strings.TrimSpace(item.UpstreamModel)
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func fallbackModels(primary []string, fallback []string) []string {
+	if len(primary) > 0 {
+		return primary
+	}
+	return fallback
+}
+
+func pickDefaultModel(current string, models []string) string {
+	for _, item := range models {
+		if item == current {
+			return current
+		}
+	}
+	if len(models) > 0 {
+		return models[0]
+	}
+	return ""
 }
 
 func ModelCost(modelName string) (int, error) {
@@ -111,13 +421,43 @@ func ModelCost(modelName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	modelName = strings.TrimSpace(modelName)
-	for _, item := range normalizePublicSetting(settings.Public).ModelChannel.ModelCosts {
-		if item.Model == modelName {
-			return item.Credits, nil
-		}
+	if item, ok := findModelCost(normalizeSettings(settings).Public.ModelChannel.ModelCosts, modelName); ok {
+		return item.Credits, nil
 	}
 	return 0, nil
+}
+
+func ModelRequestCost(modelName string, path string, body []byte, contentType string) (int, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return 0, err
+	}
+	item, ok := findModelCost(normalizeSettings(settings).Public.ModelChannel.ModelCosts, modelName)
+	if !ok {
+		return 0, nil
+	}
+	modelType := item.Type
+	if modelType == "" {
+		modelType = inferModelType(publicModelUpstreamName(item, modelName))
+	}
+	switch modelType {
+	case model.ModelTypeImage:
+		count := maxPositiveInt(readAIRequestInt(body, contentType, "n"), 1)
+		resolution := strings.TrimSpace(readAIRequestString(body, contentType, "size"))
+		if resolution == "" {
+			resolution = "auto"
+		}
+		return modelResolutionCredits(item, resolution) * count, nil
+	case model.ModelTypeVideo:
+		seconds := maxPositiveInt(readAIRequestInt(body, contentType, "seconds"), readAIRequestInt(body, contentType, "duration"), readAIRequestInt(body, contentType, "duration_seconds"), 1)
+		unit := item.SecondCredits
+		if unit <= 0 {
+			unit = item.Credits
+		}
+		return unit * seconds, nil
+	default:
+		return item.Credits, nil
+	}
 }
 
 func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting {
@@ -125,17 +465,42 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels = []model.ModelChannel{}
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	setting.Auth.Email = normalizePrivateEmailAuthSetting(setting.Auth.Email)
+	setting.ObjectStorage = normalizeObjectStorageSetting(setting.ObjectStorage)
 	for i := range setting.Channels {
-		if setting.Channels[i].Protocol == "" {
-			setting.Channels[i].Protocol = "openai"
-		}
-		if setting.Channels[i].Models == nil {
-			setting.Channels[i].Models = []string{}
-		}
-		if setting.Channels[i].Weight <= 0 {
-			setting.Channels[i].Weight = 1
-		}
+		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
 	}
+	return setting
+}
+
+func normalizePrivateEmailAuthSetting(setting model.PrivateEmailAuthSetting) model.PrivateEmailAuthSetting {
+	setting.SMTPHost = strings.TrimSpace(setting.SMTPHost)
+	setting.SMTPUsername = strings.TrimSpace(setting.SMTPUsername)
+	setting.SMTPPassword = strings.TrimSpace(setting.SMTPPassword)
+	setting.FromEmail = strings.TrimSpace(setting.FromEmail)
+	setting.FromName = strings.TrimSpace(setting.FromName)
+	setting.Subject = strings.TrimSpace(setting.Subject)
+	if setting.SMTPPort <= 0 {
+		setting.SMTPPort = 587
+	}
+	if setting.Subject == "" {
+		setting.Subject = "邮箱验证码"
+	}
+	return setting
+}
+
+func normalizeObjectStorageSetting(setting model.ObjectStorageSetting) model.ObjectStorageSetting {
+	setting.Provider = strings.TrimSpace(setting.Provider)
+	if setting.Provider == "" {
+		setting.Provider = "s3"
+	}
+	setting.Endpoint = strings.TrimRight(strings.TrimSpace(setting.Endpoint), "/")
+	setting.Region = strings.TrimSpace(setting.Region)
+	setting.Bucket = strings.TrimSpace(setting.Bucket)
+	setting.AccessKeyID = strings.TrimSpace(setting.AccessKeyID)
+	setting.SecretAccessKey = strings.TrimSpace(setting.SecretAccessKey)
+	setting.PublicURL = strings.TrimRight(strings.TrimSpace(setting.PublicURL), "/")
+	setting.Prefix = strings.Trim(strings.TrimSpace(setting.Prefix), "/")
 	return setting
 }
 
@@ -143,7 +508,10 @@ func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	for i := range settings.Private.Channels {
 		settings.Private.Channels[i].APIKey = ""
 	}
+	settings.Private.Auth.Email.SMTPPassword = ""
 	settings.Private.Auth.LinuxDo.ClientSecret = ""
+	settings.Private.Auth.Google.ClientSecret = ""
+	settings.Private.ObjectStorage.SecretAccessKey = ""
 	return settings
 }
 
@@ -159,8 +527,17 @@ func keepPrivateAPIKeys(settings *model.Settings, saved model.Settings) {
 }
 
 func keepPrivateAuthSecrets(settings *model.Settings, saved model.Settings) {
+	if strings.TrimSpace(settings.Private.Auth.Email.SMTPPassword) == "" {
+		settings.Private.Auth.Email.SMTPPassword = saved.Private.Auth.Email.SMTPPassword
+	}
 	if strings.TrimSpace(settings.Private.Auth.LinuxDo.ClientSecret) == "" {
 		settings.Private.Auth.LinuxDo.ClientSecret = saved.Private.Auth.LinuxDo.ClientSecret
+	}
+	if strings.TrimSpace(settings.Private.Auth.Google.ClientSecret) == "" {
+		settings.Private.Auth.Google.ClientSecret = saved.Private.Auth.Google.ClientSecret
+	}
+	if strings.TrimSpace(settings.Private.ObjectStorage.SecretAccessKey) == "" {
+		settings.Private.ObjectStorage.SecretAccessKey = saved.Private.ObjectStorage.SecretAccessKey
 	}
 }
 
@@ -177,13 +554,18 @@ func findSavedChannel(channel model.ModelChannel, saved []model.ModelChannel, in
 }
 
 func SelectModelChannel(modelName string) (model.ModelChannel, error) {
+	channel, _, err := SelectModelChannelWithModel(modelName)
+	return channel, err
+}
+
+func SelectModelChannelWithModel(modelName string) (model.ModelChannel, string, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
-		return model.ModelChannel{}, err
+		return model.ModelChannel{}, "", err
 	}
 	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
 	if len(channels) == 0 {
-		return model.ModelChannel{}, errors.New("没有可用模型渠道")
+		return model.ModelChannel{}, "", errors.New("没有可用模型渠道")
 	}
 	total := 0
 	for _, channel := range channels {
@@ -193,10 +575,10 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 	for _, channel := range channels {
 		hit -= channel.Weight
 		if hit < 0 {
-			return channel, nil
+			return channel, upstreamModelForSelection(channel, modelName), nil
 		}
 	}
-	return channels[0], nil
+	return channels[0], upstreamModelForSelection(channels[0], modelName), nil
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
@@ -238,61 +620,26 @@ func isSeedanceModelName(modelName string) bool {
 	return strings.Contains(modelName, "seedance") || strings.Contains(modelName, "doubao-seedance")
 }
 
-func enabledChannelModels(channels []model.ModelChannel) []string {
-	models := []string{}
-	for _, channel := range channels {
-		if !channel.Enabled {
-			continue
-		}
-		models = append(models, channel.Models...)
+func SelectModelChannelAPIKey(channel model.ModelChannel) string {
+	keys := modelChannelAPIKeys(channel.APIKey)
+	if len(keys) == 0 {
+		return ""
 	}
-	return uniqueModelNames(models)
+	if len(keys) == 1 {
+		return keys[0]
+	}
+	return keys[rand.Intn(len(keys))]
 }
 
-func uniqueModelNames(models []string) []string {
-	result := []string{}
-	seen := map[string]bool{}
-	for _, item := range models {
-		name := strings.TrimSpace(item)
-		if name == "" || seen[name] {
-			continue
-		}
-		seen[name] = true
-		result = append(result, name)
-	}
-	return result
-}
-
-func repairDefaultModel(current string, models []string, preferred func(string) bool) string {
-	current = strings.TrimSpace(current)
-	for _, item := range models {
-		if item == current {
-			return current
+func modelChannelAPIKeys(value string) []string {
+	keys := []string{}
+	for _, key := range strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n") {
+		key = strings.TrimSpace(key)
+		if key != "" {
+			keys = append(keys, key)
 		}
 	}
-	for _, item := range models {
-		if preferred(item) {
-			return item
-		}
-	}
-	if len(models) > 0 {
-		return models[0]
-	}
-	return ""
-}
-
-func isVideoModelName(modelName string) bool {
-	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
-}
-
-func isImageModelName(modelName string) bool {
-	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
-}
-
-func isTextModelName(modelName string) bool {
-	return !isImageModelName(modelName) && !isVideoModelName(modelName)
+	return keys
 }
 
 func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
@@ -302,10 +649,247 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 	if channel.Models == nil {
 		channel.Models = []string{}
 	}
+	if len(channel.ModelItems) == 0 {
+		for _, modelName := range channel.Models {
+			modelName = strings.TrimSpace(modelName)
+			if modelName == "" {
+				continue
+			}
+			channel.ModelItems = append(channel.ModelItems, model.ModelItem{Model: modelName, Type: inferModelType(modelName), Selected: true, Enabled: true})
+		}
+	} else {
+		items := make([]model.ModelItem, 0, len(channel.ModelItems))
+		for _, item := range channel.ModelItems {
+			item = normalizeModelItem(item)
+			if item.Model != "" {
+				items = append(items, item)
+			}
+		}
+		channel.ModelItems = items
+	}
+	channel.Models = enabledModelNames(channel.ModelItems)
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}
 	return channel
+}
+
+func normalizeModelItem(item model.ModelItem) model.ModelItem {
+	item.Model = strings.TrimSpace(item.Model)
+	item.Name = strings.TrimSpace(item.Name)
+	item.ThumbnailURL = strings.TrimSpace(item.ThumbnailURL)
+	item.ProviderDisplayName = strings.TrimSpace(item.ProviderDisplayName)
+	item.Description = strings.TrimSpace(item.Description)
+	if item.Type == "" {
+		item.Type = inferModelType(item.Model)
+	}
+	if item.Enabled {
+		item.Selected = true
+	}
+	if !item.Selected {
+		item.Enabled = false
+	}
+	item.Tags = cleanStrings(item.Tags)
+	if item.Credits < 0 {
+		item.Credits = 0
+	}
+	if item.SecondCredits < 0 {
+		item.SecondCredits = 0
+	}
+	for i := range item.ResolutionCosts {
+		item.ResolutionCosts[i].Resolution = strings.TrimSpace(item.ResolutionCosts[i].Resolution)
+		if item.ResolutionCosts[i].Credits < 0 {
+			item.ResolutionCosts[i].Credits = 0
+		}
+	}
+	routes := make([]model.ModelAPIRoute, 0, len(item.APIRoutes))
+	for _, route := range item.APIRoutes {
+		route.Path = strings.TrimSpace(route.Path)
+		if route.Path != "" {
+			routes = append(routes, route)
+		}
+	}
+	item.APIRoutes = routes
+	return item
+}
+
+func normalizeModelCost(item model.ModelCost) model.ModelCost {
+	item.Model = strings.TrimSpace(item.Model)
+	item.UpstreamModel = strings.TrimSpace(item.UpstreamModel)
+	if item.UpstreamModel == "" {
+		item.UpstreamModel = item.Model
+	}
+	item.Name = strings.TrimSpace(item.Name)
+	item.ThumbnailURL = strings.TrimSpace(item.ThumbnailURL)
+	item.ProviderName = strings.TrimSpace(item.ProviderName)
+	item.ProviderEndpoint = normalizeModelChannelBaseURL(item.ProviderEndpoint)
+	item.ProviderDisplayName = strings.TrimSpace(item.ProviderDisplayName)
+	item.Description = strings.TrimSpace(item.Description)
+	if item.Type == "" {
+		item.Type = inferModelType(item.UpstreamModel)
+	}
+	item.Tags = cleanStrings(item.Tags)
+	if item.Credits < 0 {
+		item.Credits = 0
+	}
+	if item.SecondCredits < 0 {
+		item.SecondCredits = 0
+	}
+	for i := range item.ResolutionCosts {
+		item.ResolutionCosts[i].Resolution = strings.TrimSpace(item.ResolutionCosts[i].Resolution)
+		if item.ResolutionCosts[i].Credits < 0 {
+			item.ResolutionCosts[i].Credits = 0
+		}
+	}
+	return item
+}
+
+func enabledModelNames(items []model.ModelItem) []string {
+	result := []string{}
+	for _, item := range items {
+		if item.Selected && item.Enabled && strings.TrimSpace(item.Model) != "" {
+			result = append(result, strings.TrimSpace(item.Model))
+		}
+	}
+	return uniqueStrings(result)
+}
+
+func uniqueStrings(items []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		result = append(result, item)
+	}
+	return result
+}
+
+func cleanStrings(items []string) []string {
+	result := []string{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return uniqueStrings(result)
+}
+
+func inferModelType(modelName string) model.ModelType {
+	value := strings.ToLower(modelName)
+	if strings.Contains(value, "audio") || strings.Contains(value, "tts") || strings.Contains(value, "speech") || strings.Contains(value, "voice") || strings.Contains(value, "music") || strings.Contains(value, "sound") {
+		return model.ModelTypeAudio
+	}
+	if strings.Contains(value, "seedance") || strings.Contains(value, "video") || strings.Contains(value, "sora") || strings.Contains(value, "veo") || strings.Contains(value, "kling") || strings.Contains(value, "runway") || strings.Contains(value, "grok-imagine-video") || strings.Contains(value, "wan") || strings.Contains(value, "hailuo") {
+		return model.ModelTypeVideo
+	}
+	if strings.Contains(value, "seedream") || strings.Contains(value, "image") || strings.Contains(value, "dall") || strings.Contains(value, "imagen") || strings.Contains(value, "flux") || strings.Contains(value, "sdxl") || strings.Contains(value, "stable") || strings.Contains(value, "midjourney") || strings.Contains(value, "gpt-image") {
+		return model.ModelTypeImage
+	}
+	return model.ModelTypeText
+}
+
+func findModelCost(items []model.ModelCost, modelName string) (model.ModelCost, bool) {
+	modelName = strings.TrimSpace(modelName)
+	for _, item := range items {
+		item = normalizeModelCost(item)
+		if strings.TrimSpace(item.Model) == modelName || strings.TrimSpace(item.UpstreamModel) == modelName {
+			return normalizeModelCost(item), true
+		}
+	}
+	return model.ModelCost{}, false
+}
+
+func modelResolutionCredits(item model.ModelCost, resolution string) int {
+	bucket := imageResolutionBucket(resolution)
+	for _, cost := range item.ResolutionCosts {
+		value := strings.TrimSpace(cost.Resolution)
+		if strings.EqualFold(value, resolution) || strings.EqualFold(value, bucket) {
+			return cost.Credits
+		}
+	}
+	return item.Credits
+}
+
+func imageResolutionBucket(resolution string) string {
+	value := strings.ToLower(strings.TrimSpace(resolution))
+	if value == "1k" || value == "2k" || value == "4k" {
+		return value
+	}
+	if value == "low" || value == "standard" || value == "auto" {
+		return "1k"
+	}
+	if value == "medium" || value == "hd" {
+		return "2k"
+	}
+	if value == "high" {
+		return "4k"
+	}
+	parts := strings.Split(value, "x")
+	if len(parts) != 2 {
+		return "1k"
+	}
+	width, _ := strconv.Atoi(parts[0])
+	height, _ := strconv.Atoi(parts[1])
+	shortSide := width
+	if height < shortSide {
+		shortSide = height
+	}
+	if shortSide > 1600 {
+		return "4k"
+	}
+	if shortSide > 1100 {
+		return "2k"
+	}
+	return "1k"
+}
+
+func maxPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 1
+}
+
+func readAIRequestString(body []byte, contentType string, key string) string {
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		_, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			return ""
+		}
+		form, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).ReadForm(32 << 20)
+		if err != nil {
+			return ""
+		}
+		defer form.RemoveAll()
+		if values := form.Value[key]; len(values) > 0 {
+			return values[0]
+		}
+		return ""
+	}
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	if value, ok := payload[key]; ok {
+		return fmt.Sprint(value)
+	}
+	return ""
+}
+
+func readAIRequestInt(body []byte, contentType string, key string) int {
+	value := strings.TrimSpace(readAIRequestString(body, contentType, key))
+	if value == "" {
+		return 0
+	}
+	result, _ := strconv.Atoi(value)
+	return result
 }
 
 func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelChannel, error) {
@@ -343,37 +927,39 @@ func resolveAdminChannel(index *int, channel model.ModelChannel) (model.ModelCha
 }
 
 func fetchAdminChannelModels(channel model.ModelChannel) ([]string, error) {
-	request, err := http.NewRequest(http.MethodGet, BuildModelChannelURL(channel, "/models"), nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
-	response, err := adminModelHTTPClient.Do(request)
-	if err != nil {
-		return nil, safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
-	}
-	defer response.Body.Close()
-	body, _ := io.ReadAll(response.Body)
-	if response.StatusCode >= http.StatusBadRequest {
-		if response.StatusCode == http.StatusNotFound && isArkAgentPlanChannel(channel) {
-			return nil, safeMessageError{message: "火山方舟 Agent Plan 未提供 OpenAI /models 模型列表接口，请手动填写模型名称，例如 doubao-seedance-2.0。"}
+	var lastErr error
+	for _, url := range adminModelListURLs(channel) {
+		request, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			lastErr = err
+			continue
 		}
-		return nil, readAdminChannelError(body, response.StatusCode, "读取模型失败")
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	_ = json.Unmarshal(body, &payload)
-	result := make([]string, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		if strings.TrimSpace(item.ID) != "" {
-			result = append(result, item.ID)
+		request.Header.Set("Authorization", "Bearer "+SelectModelChannelAPIKey(channel))
+		response, err := adminModelHTTPClient.Do(request)
+		if err != nil {
+			lastErr = safeMessageError{message: "读取模型失败：上游接口无响应或网络不可达"}
+			continue
 		}
+		body, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if response.StatusCode >= http.StatusBadRequest {
+			if response.StatusCode == http.StatusNotFound && isArkAgentPlanChannel(channel) {
+				lastErr = safeMessageError{message: "火山方舟 Agent Plan 未提供 OpenAI /models 模型列表接口，请手动填写模型名称，例如 doubao-seedance-2.0。"}
+				continue
+			}
+			lastErr = readAdminChannelError(body, response.StatusCode, "读取模型失败")
+			continue
+		}
+		result := parseAdminChannelModels(body)
+		if len(result) > 0 {
+			return result, nil
+		}
+		lastErr = safeMessageError{message: "模型列表为空或响应格式无法识别"}
 	}
-	sort.Strings(result)
-	return result, nil
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, safeMessageError{message: "读取模型失败"}
 }
 
 func testAdminChannelModel(channel model.ModelChannel, modelName string) (string, error) {
@@ -391,11 +977,11 @@ func testAdminChannelModel(channel model.ModelChannel, modelName string) (string
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("Authorization", "Bearer "+channel.APIKey)
+	request.Header.Set("Authorization", "Bearer "+SelectModelChannelAPIKey(channel))
 	request.Header.Set("Content-Type", "application/json")
-	response, err := adminModelHTTPClient.Do(request)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", safeMessageError{message: "测试失败：上游接口无响应或网络不可达"}
+		return "", err
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
@@ -427,9 +1013,9 @@ func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (
 		return "", safeMessageError{message: "缺少 API Key"}
 	}
 	if !isArkAgentPlanChannel(channel) {
-		return "Seedance 视频模型不会发送 /chat/completions 文本测试。已检查 Base URL、API Key 和模型名非空；未调用视频生成接口，因此未验证套餐额度或模型权限。", nil
+		return "", safeMessageError{message: "Seedance 2.0 请使用火山方舟 Agent Plan Base URL：https://ark.cn-beijing.volces.com/api/plan/v3"}
 	}
-	return "Agent Plan / Seedance 视频模型配置格式已通过。后台测试不会调用视频生成接口，因此未验证 API Key、套餐额度或模型权限；请在画布中使用视频生成验证。", nil
+	return "Agent Plan / Seedance 视频模型配置格式已通过。后台测试不会调用视频生成接口，请在画布中使用视频生成验证模型权限。", nil
 }
 
 func readAdminChannelError(body []byte, statusCode int, fallback string) error {
@@ -447,16 +1033,69 @@ func readAdminChannelError(body []byte, statusCode int, fallback string) error {
 			return safeMessageError{message: payload.Msg}
 		}
 	}
-	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
-		return safeMessageError{message: fmt.Sprintf("上游接口鉴权失败（%d），请检查 API Key、套餐权限或模型权限", statusCode)}
-	}
-	if statusCode == http.StatusTooManyRequests {
-		return safeMessageError{message: "上游接口限流或额度不足（429），请稍后重试或检查额度"}
+	if statusCode == http.StatusUnauthorized {
+		return safeMessageError{message: "上游接口认证失败（401），请检查 API Key"}
 	}
 	if statusCode > 0 {
 		return safeMessageError{message: fmt.Sprintf("%s：%d", fallback, statusCode)}
 	}
 	return safeMessageError{message: fallback}
+}
+
+func adminModelListURLs(channel model.ModelChannel) []string {
+	baseURL := strings.TrimRight(channel.BaseURL, "/")
+	candidates := []string{
+		BuildModelChannelURL(channel, "/models"),
+		baseURL + "/models",
+		baseURL + "/v1/models",
+		baseURL + "/v1beta/models",
+	}
+	return uniqueStrings(candidates)
+}
+
+func parseAdminChannelModels(body []byte) []string {
+	var payload any
+	if len(body) == 0 || json.Unmarshal(body, &payload) != nil {
+		return []string{}
+	}
+	seen := map[string]bool{}
+	collectAdminChannelModels(payload, seen)
+	result := make([]string, 0, len(seen))
+	for item := range seen {
+		result = append(result, item)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func collectAdminChannelModels(value any, result map[string]bool) {
+	switch current := value.(type) {
+	case []any:
+		for _, item := range current {
+			collectAdminChannelModels(item, result)
+		}
+	case map[string]any:
+		if modelName := readAdminChannelModelName(current); modelName != "" {
+			result[modelName] = true
+		}
+		for _, key := range []string{"data", "models", "items", "result", "list", "model_prices", "modelPrices"} {
+			if child, ok := current[key]; ok {
+				collectAdminChannelModels(child, result)
+			}
+		}
+	}
+}
+
+func readAdminChannelModelName(item map[string]any) string {
+	for _, key := range []string{"id", "model", "model_name", "modelName", "name"} {
+		if value, ok := item[key].(string); ok {
+			value = strings.TrimSpace(strings.TrimPrefix(value, "models/"))
+			if value != "" {
+				return value
+			}
+		}
+	}
+	return ""
 }
 
 type safeMessageError struct {
@@ -473,16 +1112,32 @@ func (err safeMessageError) SafeMessage() string {
 
 func modelChannelsForModel(channels []model.ModelChannel, modelName string) []model.ModelChannel {
 	result := []model.ModelChannel{}
+	modelName = strings.TrimSpace(modelName)
 	for _, channel := range channels {
 		if !channel.Enabled || channel.BaseURL == "" || channel.APIKey == "" {
 			continue
 		}
-		for _, item := range channel.Models {
-			if strings.TrimSpace(item) == modelName {
+		for _, item := range channel.ModelItems {
+			if modelItemMatchesSelection(channel, item, modelName) {
 				result = append(result, channel)
 				break
 			}
 		}
 	}
 	return result
+}
+
+func modelItemMatchesSelection(channel model.ModelChannel, item model.ModelItem, modelName string) bool {
+	modelName = strings.TrimSpace(modelName)
+	return publicModelID(channel, item) == modelName || strings.TrimSpace(item.Model) == modelName
+}
+
+func upstreamModelForSelection(channel model.ModelChannel, modelName string) string {
+	modelName = strings.TrimSpace(modelName)
+	for _, item := range channel.ModelItems {
+		if modelItemMatchesSelection(channel, item, modelName) {
+			return strings.TrimSpace(item.Model)
+		}
+	}
+	return modelName
 }

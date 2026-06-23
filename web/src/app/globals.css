@@ -134,6 +134,18 @@
     textarea::-webkit-resizer {
         display: none;
     }
+    select {
+        background-color: var(--popover);
+        color: var(--popover-foreground);
+        color-scheme: light;
+    }
+    select option {
+        background-color: var(--popover);
+        color: var(--popover-foreground);
+    }
+    .dark select {
+        color-scheme: dark;
+    }
     html {
         @apply font-sans;
     }
@@ -433,6 +445,42 @@
 
     .canvas-node-info-modal .ant-modal-close {
         top: 21px;
+    }
+
+    .ant-select-dropdown,
+    .ant-picker-dropdown,
+    .ant-dropdown-menu,
+    .ant-modal-content,
+    .ant-drawer-content {
+        background: var(--ant-color-bg-elevated) !important;
+        color: var(--ant-color-text) !important;
+    }
+
+    .ant-select-item,
+    .ant-dropdown-menu-item,
+    .ant-dropdown-menu-submenu-title,
+    .ant-modal-title,
+    .ant-drawer-title {
+        color: var(--ant-color-text) !important;
+    }
+
+    .ant-select-selector,
+    .ant-input,
+    .ant-input-number,
+    .ant-input-number-input,
+    .ant-input-affix-wrapper,
+    .ant-picker,
+    .ant-segmented,
+    .ant-table,
+    .ant-table-thead > tr > th,
+    .ant-table-tbody > tr > td {
+        color: var(--ant-color-text) !important;
+    }
+
+    .ant-select-selection-placeholder,
+    .ant-input::placeholder,
+    .ant-input-number-input::placeholder {
+        color: var(--ant-color-text-tertiary) !important;
     }
 
     @keyframes canvas-batch-child-in {

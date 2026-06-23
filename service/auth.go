@@ -2,15 +2,21 @@ package service
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
+	"mime"
 	"net/http"
+	"net/mail"
+	"net/smtp"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/basketikun/infinite-canvas/config"
@@ -30,7 +36,20 @@ type TokenClaims struct {
 
 type userExtra struct {
 	LinuxDo any `json:"linuxDo,omitempty"`
+	Google  any `json:"google,omitempty"`
 }
+
+type registerEmailCode struct {
+	Code      string
+	Email     string
+	ExpiresAt time.Time
+	SentAt    time.Time
+}
+
+var registerEmailCodes = struct {
+	sync.Mutex
+	items map[string]registerEmailCode
+}{items: map[string]registerEmailCode{}}
 
 func EnsureDefaultAdmin() error {
 	if strings.TrimSpace(config.Cfg.AdminUsername) == "" || strings.TrimSpace(config.Cfg.AdminPassword) == "" {
@@ -58,7 +77,51 @@ func EnsureDefaultAdmin() error {
 	return err
 }
 
-func Register(username string, password string) (model.AuthSession, error) {
+func SendRegisterEmailCode(email string) error {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return err
+	}
+	normalizedSettings := normalizeSettings(settings)
+	if normalizedSettings.Public.Auth.AllowRegister != nil && !*normalizedSettings.Public.Auth.AllowRegister {
+		return safeMessageError{message: "当前未开放注册"}
+	}
+	if normalizedSettings.Public.Auth.EmailRegister.Enabled != nil && !*normalizedSettings.Public.Auth.EmailRegister.Enabled {
+		return safeMessageError{message: "邮箱注册未开启"}
+	}
+	if normalizedSettings.Public.Auth.EmailRegister.CodeEnabled == nil || !*normalizedSettings.Public.Auth.EmailRegister.CodeEnabled {
+		return safeMessageError{message: "邮箱验证码未开启"}
+	}
+	email, err = normalizeEmailAddress(email)
+	if err != nil {
+		return err
+	}
+	if _, ok, err := repository.GetUserByEmail(email); err != nil || ok {
+		if err != nil {
+			return err
+		}
+		return safeMessageError{message: "邮箱已存在"}
+	}
+	registerEmailCodes.Lock()
+	if item, ok := registerEmailCodes.items[email]; ok && time.Since(item.SentAt) < time.Minute {
+		registerEmailCodes.Unlock()
+		return safeMessageError{message: "验证码发送过于频繁"}
+	}
+	registerEmailCodes.Unlock()
+	code, err := randomDigitCode(6)
+	if err != nil {
+		return err
+	}
+	if err := sendRegisterCodeEmail(normalizedSettings.Private.Auth.Email, email, code); err != nil {
+		return err
+	}
+	registerEmailCodes.Lock()
+	registerEmailCodes.items[email] = registerEmailCode{Code: code, Email: email, SentAt: time.Now(), ExpiresAt: time.Now().Add(10 * time.Minute)}
+	registerEmailCodes.Unlock()
+	return nil
+}
+
+func Register(username string, email string, password string, emailCode string) (model.AuthSession, error) {
 	settings, err := repository.GetSettings()
 	if err != nil {
 		return model.AuthSession{}, err
@@ -67,18 +130,49 @@ func Register(username string, password string) (model.AuthSession, error) {
 	if normalizedSettings.Public.Auth.AllowRegister != nil && !*normalizedSettings.Public.Auth.AllowRegister {
 		return model.AuthSession{}, safeMessageError{message: "当前未开放注册"}
 	}
+	if normalizedSettings.Public.Auth.EmailRegister.Enabled != nil && !*normalizedSettings.Public.Auth.EmailRegister.Enabled {
+		return model.AuthSession{}, safeMessageError{message: "邮箱注册未开启"}
+	}
 	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(email)
 	if strings.ContainsAny(username, " \t\r\n") {
 		return model.AuthSession{}, safeMessageError{message: "用户名不能包含空格"}
 	}
+	codeEnabled := normalizedSettings.Public.Auth.EmailRegister.CodeEnabled != nil && *normalizedSettings.Public.Auth.EmailRegister.CodeEnabled
+	if codeEnabled && email == "" {
+		return model.AuthSession{}, safeMessageError{message: "邮箱不能为空"}
+	}
+	if normalizedSettings.Public.Auth.EmailRegister.EmailRequired != nil && *normalizedSettings.Public.Auth.EmailRegister.EmailRequired && email == "" {
+		return model.AuthSession{}, safeMessageError{message: "邮箱不能为空"}
+	}
+	if email != "" {
+		normalizedEmail, err := normalizeEmailAddress(email)
+		if err != nil {
+			return model.AuthSession{}, err
+		}
+		email = normalizedEmail
+	}
 	if username == "" || password == "" {
 		return model.AuthSession{}, safeMessageError{message: "用户名和密码不能为空"}
+	}
+	if codeEnabled {
+		if err := verifyRegisterEmailCode(email, emailCode); err != nil {
+			return model.AuthSession{}, err
+		}
 	}
 	if _, ok, err := repository.GetUserByUsername(username); err != nil || ok {
 		if err != nil {
 			return model.AuthSession{}, err
 		}
 		return model.AuthSession{}, safeMessageError{message: "用户名已存在"}
+	}
+	if email != "" {
+		if _, ok, err := repository.GetUserByEmail(email); err != nil || ok {
+			if err != nil {
+				return model.AuthSession{}, err
+			}
+			return model.AuthSession{}, safeMessageError{message: "邮箱已存在"}
+		}
 	}
 	hash, err := hashPassword(password)
 	if err != nil {
@@ -87,6 +181,7 @@ func Register(username string, password string) (model.AuthSession, error) {
 	user, err := repository.SaveUser(model.User{
 		ID:        newID("user"),
 		Username:  username,
+		Email:     email,
 		Password:  hash,
 		Role:      model.UserRoleUser,
 		AffCode:   newAffCode(),
@@ -97,11 +192,14 @@ func Register(username string, password string) (model.AuthSession, error) {
 	if err != nil {
 		return model.AuthSession{}, err
 	}
+	if codeEnabled {
+		clearRegisterEmailCode(email)
+	}
 	return newSession(user)
 }
 
 func Login(username string, password string) (model.AuthSession, error) {
-	user, ok, err := repository.GetUserByUsername(strings.TrimSpace(username))
+	user, ok, err := repository.GetUserByUsernameOrEmail(strings.TrimSpace(username))
 	if err != nil {
 		return model.AuthSession{}, err
 	}
@@ -119,6 +217,96 @@ func Login(username string, password string) (model.AuthSession, error) {
 		return model.AuthSession{}, err
 	}
 	return newSession(user)
+}
+
+func GoogleAuthorizeURL(r *http.Request, redirect string) (string, error) {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return "", err
+	}
+	settings = normalizeSettings(settings)
+	google := settings.Private.Auth.Google
+	if !settings.Public.Auth.Google.Enabled {
+		return "", safeMessageError{message: "Google 登录未开启"}
+	}
+	if strings.TrimSpace(google.ClientID) == "" || strings.TrimSpace(google.ClientSecret) == "" {
+		return "", safeMessageError{message: "Google 登录未配置"}
+	}
+	values := url.Values{}
+	values.Set("client_id", google.ClientID)
+	values.Set("redirect_uri", googleRedirectURI(r))
+	values.Set("response_type", "code")
+	values.Set("scope", "openid email profile")
+	values.Set("state", base64.RawURLEncoding.EncodeToString([]byte(redirect)))
+	return "https://accounts.google.com/o/oauth2/v2/auth?" + values.Encode(), nil
+}
+
+func LoginWithGoogle(r *http.Request, code string, state string) (model.AuthSession, string, error) {
+	redirect := decodeState(state)
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	settings = normalizeSettings(settings)
+	google := settings.Private.Auth.Google
+	if !settings.Public.Auth.Google.Enabled {
+		return model.AuthSession{}, redirect, safeMessageError{message: "Google 登录未开启"}
+	}
+	token, err := googleAccessToken(r, code, google)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	profile, err := googleProfile(token)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	googleID := strings.TrimSpace(profile.Sub)
+	if googleID == "" {
+		return model.AuthSession{}, redirect, safeMessageError{message: "Google 用户信息无效"}
+	}
+	user, ok, err := repository.GetUserByGoogleID(googleID)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	if !ok && strings.TrimSpace(profile.Email) != "" {
+		user, ok, err = repository.GetUserByEmail(profile.Email)
+		if err != nil {
+			return model.AuthSession{}, redirect, err
+		}
+	}
+	if !ok {
+		if settings.Public.Auth.AllowRegister != nil && !*settings.Public.Auth.AllowRegister {
+			return model.AuthSession{}, redirect, safeMessageError{message: "当前未开放注册"}
+		}
+		user = model.User{
+			ID:          newID("user"),
+			Username:    googleUsername(profile.Email, googleID),
+			Email:       strings.TrimSpace(profile.Email),
+			DisplayName: strings.TrimSpace(profile.Name),
+			AvatarURL:   strings.TrimSpace(profile.Picture),
+			Role:        model.UserRoleUser,
+			AffCode:     newAffCode(),
+			GoogleID:    googleID,
+			Status:      model.UserStatusActive,
+			CreatedAt:   now(),
+		}
+	} else if user.Status == model.UserStatusBan {
+		return model.AuthSession{}, redirect, safeMessageError{message: "账号已被禁用"}
+	}
+	user.GoogleID = googleID
+	user.Email = firstNonEmpty(profile.Email, user.Email)
+	user.DisplayName = firstNonEmpty(profile.Name, user.DisplayName)
+	user.AvatarURL = firstNonEmpty(profile.Picture, user.AvatarURL)
+	user.LastLoginAt = now()
+	user.UpdatedAt = now()
+	extra, _ := json.Marshal(userExtra{Google: profile})
+	user.Extra = string(extra)
+	user, err = repository.SaveUser(user)
+	if err != nil {
+		return model.AuthSession{}, redirect, err
+	}
+	session, err := newSession(user)
+	return session, redirect, err
 }
 
 func LinuxDoAuthorizeURL(r *http.Request, redirect string) (string, error) {
@@ -262,6 +450,19 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	} else if ok && saved.ID != user.ID {
 		return user, safeMessageError{message: "用户名已存在"}
 	}
+	user.Email = strings.TrimSpace(user.Email)
+	if user.Email != "" {
+		normalizedEmail, err := normalizeEmailAddress(user.Email)
+		if err != nil {
+			return user, err
+		}
+		user.Email = normalizedEmail
+		if saved, ok, err := repository.GetUserByEmail(user.Email); err != nil {
+			return user, err
+		} else if ok && saved.ID != user.ID {
+			return user, safeMessageError{message: "邮箱已存在"}
+		}
+	}
 	isCreate := user.ID == ""
 	if isCreate {
 		user.ID = newID("user")
@@ -283,6 +484,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		}
 		if user.LinuxDoID == "" {
 			user.LinuxDoID = saved.LinuxDoID
+		}
+		if user.GoogleID == "" {
+			user.GoogleID = saved.GoogleID
 		}
 		user.LastLoginAt = saved.LastLoginAt
 	}
@@ -338,7 +542,7 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 		return err
 	}
 	if !ok {
-		return safeMessageError{message: "算力点不足"}
+		return safeMessageError{message: "积分不足"}
 	}
 	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
 	_, err = repository.SaveCreditLog(model.CreditLog{
@@ -470,6 +674,17 @@ type linuxDoUserResponse struct {
 	AvatarTemplate string `json:"avatar_template"`
 }
 
+type googleTokenResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+type googleUserResponse struct {
+	Sub     string `json:"sub"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
+}
+
 func linuxDoAccessToken(r *http.Request, code string, setting model.PrivateLinuxDoAuthSetting) (string, error) {
 	values := url.Values{}
 	values.Set("client_id", setting.ClientID)
@@ -536,6 +751,150 @@ func linuxDoAvatar(template string) string {
 		template = "https://linux.do" + template
 	}
 	return strings.ReplaceAll(template, "{size}", "120")
+}
+
+func googleAccessToken(r *http.Request, code string, setting model.PrivateGoogleAuthSetting) (string, error) {
+	values := url.Values{}
+	values.Set("client_id", setting.ClientID)
+	values.Set("client_secret", setting.ClientSecret)
+	values.Set("grant_type", "authorization_code")
+	values.Set("code", code)
+	values.Set("redirect_uri", googleRedirectURI(r))
+	req, _ := http.NewRequest(http.MethodPost, "https://oauth2.googleapis.com/token", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var payload googleTokenResponse
+	if err := doGoogleJSON(req, &payload); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(payload.AccessToken) == "" {
+		return "", safeMessageError{message: "Google 登录失败"}
+	}
+	return payload.AccessToken, nil
+}
+
+func googleRedirectURI(r *http.Request) string {
+	return RequestOrigin(r) + "/api/auth/google/callback"
+}
+
+func googleProfile(token string) (googleUserResponse, error) {
+	req, _ := http.NewRequest(http.MethodGet, "https://openidconnect.googleapis.com/v1/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	var payload googleUserResponse
+	err := doGoogleJSON(req, &payload)
+	return payload, err
+}
+
+func doGoogleJSON(req *http.Request, payload any) error {
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return safeMessageError{message: "Google 登录失败"}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return safeMessageError{message: "Google 登录失败"}
+	}
+	return json.NewDecoder(bytes.NewReader(body)).Decode(payload)
+}
+
+func googleUsername(email string, id string) string {
+	base := strings.TrimSpace(strings.Split(email, "@")[0])
+	if base == "" {
+		base = "google-" + id
+	}
+	if _, ok, err := repository.GetUserByUsername(base); err != nil || !ok {
+		return base
+	}
+	return base + "-" + id
+}
+
+func normalizeEmailAddress(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", safeMessageError{message: "邮箱不能为空"}
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || !strings.EqualFold(address.Address, email) {
+		return "", safeMessageError{message: "邮箱格式不正确"}
+	}
+	return strings.ToLower(address.Address), nil
+}
+
+func verifyRegisterEmailCode(email string, code string) error {
+	email, err := normalizeEmailAddress(email)
+	if err != nil {
+		return err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return safeMessageError{message: "请输入邮箱验证码"}
+	}
+	registerEmailCodes.Lock()
+	defer registerEmailCodes.Unlock()
+	item, ok := registerEmailCodes.items[email]
+	if !ok || item.Code != code {
+		return safeMessageError{message: "邮箱验证码不正确"}
+	}
+	if time.Now().After(item.ExpiresAt) {
+		delete(registerEmailCodes.items, email)
+		return safeMessageError{message: "邮箱验证码已过期"}
+	}
+	return nil
+}
+
+func clearRegisterEmailCode(email string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	registerEmailCodes.Lock()
+	delete(registerEmailCodes.items, email)
+	registerEmailCodes.Unlock()
+}
+
+func randomDigitCode(length int) (string, error) {
+	var builder strings.Builder
+	for builder.Len() < length {
+		value, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return "", err
+		}
+		builder.WriteByte(byte('0' + value.Int64()))
+	}
+	return builder.String(), nil
+}
+
+func sendRegisterCodeEmail(setting model.PrivateEmailAuthSetting, to string, code string) error {
+	setting = normalizePrivateEmailAuthSetting(setting)
+	if setting.FromEmail == "" {
+		setting.FromEmail = setting.SMTPUsername
+	}
+	if setting.SMTPHost == "" || setting.FromEmail == "" {
+		return safeMessageError{message: "邮箱服务未配置"}
+	}
+	from := setting.FromEmail
+	if setting.FromName != "" {
+		from = (&mail.Address{Name: setting.FromName, Address: setting.FromEmail}).String()
+	}
+	header := map[string]string{
+		"From":         from,
+		"To":           to,
+		"Subject":      mime.QEncoding.Encode("utf-8", setting.Subject),
+		"MIME-Version": "1.0",
+		"Content-Type": "text/plain; charset=utf-8",
+	}
+	lines := make([]string, 0, len(header)+2)
+	for key, value := range header {
+		lines = append(lines, key+": "+value)
+	}
+	body := fmt.Sprintf("你的注册验证码是：%s\n\n验证码 10 分钟内有效。如果不是你本人操作，请忽略这封邮件。", code)
+	message := strings.Join(lines, "\r\n") + "\r\n\r\n" + body
+	addr := fmt.Sprintf("%s:%d", setting.SMTPHost, setting.SMTPPort)
+	var auth smtp.Auth
+	if setting.SMTPUsername != "" {
+		auth = smtp.PlainAuth("", setting.SMTPUsername, setting.SMTPPassword, setting.SMTPHost)
+	}
+	if err := smtp.SendMail(addr, auth, setting.FromEmail, []string{to}, []byte(message)); err != nil {
+		return safeMessageError{message: "验证码发送失败"}
+	}
+	return nil
 }
 
 func decodeState(state string) string {

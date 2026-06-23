@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { ApiOutlined, AppstoreOutlined, CalculatorOutlined, FileTextOutlined, GlobalOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -13,7 +13,11 @@ import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
-    { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "算力点日志" },
+    { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "积分日志" },
+    { key: "/admin/model-providers", icon: <ApiOutlined />, label: "模型供应商" },
+    { key: "/admin/model-credits", icon: <CalculatorOutlined />, label: "模型积分" },
+    { key: "/admin/project-settings", icon: <AppstoreOutlined />, label: "故事设定" },
+    { key: "/admin/site-settings", icon: <GlobalOutlined />, label: "站点管理" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
@@ -27,18 +31,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const logout = useUserStore((state) => state.clearSession);
-    const activeKey = pathname.startsWith("/admin/settings")
-        ? "/admin/settings"
-        : pathname.startsWith("/admin/assets")
-          ? "/admin/assets"
-          : pathname.startsWith("/admin/prompts")
-            ? "/admin/prompts"
-            : pathname.startsWith("/admin/credit-logs")
-              ? "/admin/credit-logs"
-              : pathname.startsWith("/admin/users")
-                ? "/admin/users"
-                : "";
-    const pageTitle = pathname.startsWith("/admin/settings") ? "系统设置" : pathname.startsWith("/admin/assets") ? "素材库管理" : pathname.startsWith("/admin/prompts") ? "提示词管理" : pathname.startsWith("/admin/credit-logs") ? "算力点日志" : "用户管理";
+    const activeMenu = adminMenus.find((item) => pathname.startsWith(item.key));
+    const activeKey = activeMenu?.key || "";
+    const pageTitle = activeMenu?.label === "素材库" ? "素材库管理" : activeMenu?.label || "用户管理";
 
     useEffect(() => {
         if (!isReady) return;

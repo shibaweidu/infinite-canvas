@@ -16,8 +16,14 @@ type loginRequest struct {
 }
 
 type registerRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	EmailCode string `json:"emailCode"`
+}
+
+type emailCodeRequest struct {
+	Email string `json:"email"`
 }
 
 type saveUserRequest struct {
@@ -26,6 +32,8 @@ type saveUserRequest struct {
 	Password    string           `json:"password"`
 	Email       string           `json:"email"`
 	DisplayName string           `json:"displayName"`
+	GoogleID    string           `json:"googleId"`
+	LinuxDoID   string           `json:"linuxDoId"`
 	Role        model.UserRole   `json:"role"`
 	Status      model.UserStatus `json:"status"`
 }
@@ -37,12 +45,22 @@ type adjustUserCreditsRequest struct {
 func Register(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
-	session, err := service.Register(request.Username, request.Password)
+	session, err := service.Register(request.Username, request.Email, request.Password, request.EmailCode)
 	if err != nil {
 		FailError(w, err)
 		return
 	}
 	OK(w, session)
+}
+
+func SendRegisterEmailCode(w http.ResponseWriter, r *http.Request) {
+	var request emailCodeRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	if err := service.SendRegisterEmailCode(request.Email); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +85,24 @@ func LinuxDoAuthorize(w http.ResponseWriter, r *http.Request) {
 
 func LinuxDoCallback(w http.ResponseWriter, r *http.Request) {
 	session, redirect, err := service.LoginWithLinuxDo(r, r.URL.Query().Get("code"), r.URL.Query().Get("state"))
+	if err != nil {
+		http.Redirect(w, r, loginRedirect(r, redirect, "", err.Error()), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, loginRedirect(r, redirect, session.Token, ""), http.StatusFound)
+}
+
+func GoogleAuthorize(w http.ResponseWriter, r *http.Request) {
+	authURL, err := service.GoogleAuthorizeURL(r, r.URL.Query().Get("redirect"))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func GoogleCallback(w http.ResponseWriter, r *http.Request) {
+	session, redirect, err := service.LoginWithGoogle(r, r.URL.Query().Get("code"), r.URL.Query().Get("state"))
 	if err != nil {
 		http.Redirect(w, r, loginRedirect(r, redirect, "", err.Error()), http.StatusFound)
 		return
@@ -114,6 +150,8 @@ func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 		Username:    request.Username,
 		Email:       request.Email,
 		DisplayName: request.DisplayName,
+		GoogleID:    request.GoogleID,
+		LinuxDoID:   request.LinuxDoID,
 		Role:        request.Role,
 		Status:      request.Status,
 	}, request.Password)

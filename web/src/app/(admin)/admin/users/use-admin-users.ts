@@ -47,7 +47,7 @@ export function useAdminUsers() {
         mutationFn: ({ id, credits }: { id: string; credits: number }) => adjustAdminUserCredits(token, id, credits),
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-            message.success("算力点已调整");
+            message.success("积分已调整");
         },
         onError: (error) => message.error(error instanceof Error ? error.message : "调整失败"),
     });

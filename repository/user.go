@@ -18,7 +18,7 @@ func ListUsers(q model.Query) ([]model.User, int64, error) {
 	tx := db.Model(&model.User{})
 	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
-		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ?", like, like, like, like)
+		tx = tx.Where("username LIKE ? OR display_name LIKE ? OR email LIKE ? OR linux_do_id LIKE ? OR google_id LIKE ?", like, like, like, like, like)
 	}
 
 	var total int64
@@ -70,6 +70,23 @@ func GetUserByUsername(username string) (model.User, bool, error) {
 	return findUser(db, "username = ?", username)
 }
 
+func GetUserByUsernameOrEmail(value string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	value = strings.TrimSpace(value)
+	return findUser(db, "username = ? OR email = ?", value, value)
+}
+
+func GetUserByEmail(email string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "email = ?", strings.TrimSpace(email))
+}
+
 // SaveUser 保存用户信息。
 func SaveUser(user model.User) (model.User, error) {
 	db, err := DB()
@@ -119,7 +136,7 @@ func RefundUserCredits(id string, credits int, now string) (model.User, bool, er
 	return user, ok && tx.RowsAffected > 0, err
 }
 
-// SaveCreditLog 保存算力点变更流水。
+// SaveCreditLog 保存积分变更流水。
 func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 	db, err := DB()
 	if err != nil {
@@ -172,6 +189,14 @@ func GetUserByLinuxDoID(id string) (model.User, bool, error) {
 		return model.User{}, false, err
 	}
 	return findUser(db, "linux_do_id = ?", id)
+}
+
+func GetUserByGoogleID(id string) (model.User, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, false, err
+	}
+	return findUser(db, "google_id = ?", id)
 }
 
 // findUser 查询单个用户，并将未命中转换为 ok=false。

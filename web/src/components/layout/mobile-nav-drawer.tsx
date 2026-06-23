@@ -1,28 +1,36 @@
 "use client";
 
 import { Drawer } from "antd";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 
-import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
+
+type MobileNavItem = {
+    id: string;
+    label: string;
+    path: string;
+    icon: LucideIcon;
+};
 
 type MobileNavDrawerProps = {
     open: boolean;
-    activeToolSlug?: NavigationToolSlug;
+    activePath?: string;
+    navItems: MobileNavItem[];
     onClose: () => void;
 };
 
-export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDrawerProps) {
+export function MobileNavDrawer({ open, activePath, navItems, onClose }: MobileNavDrawerProps) {
     return (
         <Drawer title="导航" placement="left" size={280} open={open} onClose={onClose} className="md:hidden">
             <div className="space-y-1">
-                {navigationTools.map((tool) => {
+                {navItems.map((tool) => {
                     const Icon = tool.icon;
-                    const active = tool.slug === activeToolSlug;
+                    const active = tool.path === activePath;
                     return (
                         <Link
-                            key={tool.slug}
-                            href={`/${tool.slug}`}
+                            key={tool.id}
+                            href={tool.path}
                             onClick={onClose}
                             className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-3 text-base transition",

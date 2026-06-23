@@ -22,10 +22,10 @@ type ImageApiResponse = {
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
-    medium: 2048,
-    high: 2880,
+    medium: 1440,
+    high: 2160,
     standard: 1024,
-    hd: 2048,
+    hd: 1440,
 };
 const QUALITY_ALIASES: Record<string, string> = {
     "1k": "low",
@@ -42,6 +42,7 @@ const IMAGE_OUTPUT_FORMAT = "png";
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
+    if (value === "auto") return "low";
     const normalized = QUALITY_ALIASES[value] || value;
     return QUALITY_BASE[normalized] ? normalized : undefined;
 }
@@ -205,7 +206,6 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
                 model: config.model,
                 prompt: withSystemPrompt(config, prompt),
                 n,
-                ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
                 response_format: "b64_json",
                 output_format: IMAGE_OUTPUT_FORMAT,
@@ -233,9 +233,6 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);
-    if (quality) {
-        formData.set("quality", quality);
-    }
     if (requestSize) {
         formData.set("size", requestSize);
     }

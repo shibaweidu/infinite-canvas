@@ -232,7 +232,7 @@ function assertVideoConfig(config: AiConfig, model: string) {
 
 function normalizeVideoSeconds(value: string) {
     const seconds = Math.floor(Number(value) || 6);
-    return String(Math.max(1, Math.min(20, seconds)));
+    return String(Math.max(1, Math.min(15, seconds)));
 }
 
 function normalizeVideoSize(value: string) {
@@ -243,8 +243,9 @@ function normalizeVideoSize(value: string) {
 }
 
 function normalizeVideoResolution(value: string) {
-    if (value === "low") return "480p";
-    if (value === "auto" || value === "high" || value === "medium") return "720p";
+    if (value === "low" || value === "480") return "480p";
+    if (value === "high" || value === "1080") return "1080p";
+    if (value === "auto" || value === "medium" || value === "720") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";
     return `${resolution}p`;
 }

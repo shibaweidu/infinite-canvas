@@ -6,27 +6,21 @@ import { ConfigProvider, Switch } from "antd";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
 
-const qualityOptions = [
-    { value: "auto", label: "自动" },
-    { value: "high", label: "高" },
-    { value: "medium", label: "中" },
-    { value: "low", label: "低" },
+const resolutionOptions = [
+    { value: "low", label: "1K" },
+    { value: "medium", label: "2K" },
+    { value: "high", label: "4K" },
 ];
 const DIMENSION_STEP = 16;
 
 const aspectOptions = [
     { value: "1:1", label: "1:1", width: 1024, height: 1024, icon: "square" },
+    { value: "16:9", label: "16:9", width: 1792, height: 1024, icon: "landscape" },
+    { value: "9:16", label: "9:16", width: 1024, height: 1792, icon: "portrait" },
     { value: "3:2", label: "3:2", width: 1536, height: 1024, icon: "landscape" },
     { value: "2:3", label: "2:3", width: 1024, height: 1536, icon: "portrait" },
-    { value: "4:3", label: "4:3", width: 1360, height: 1024, icon: "landscape" },
-    { value: "3:4", label: "3:4", width: 1024, height: 1360, icon: "portrait" },
-    { value: "16:9", label: "16:9", width: 1824, height: 1024, icon: "landscape" },
-    { value: "9:16", label: "9:16", width: 1024, height: 1824, icon: "portrait" },
-    { value: "1:1-2k", label: "1:1(2k)", size: "2048x2048", width: 2048, height: 2048, icon: "square" },
-    { value: "16:9-2k", label: "16:9(2k)", size: "2048x1152", width: 2048, height: 1152, icon: "landscape" },
-    { value: "9:16-2k", label: "9:16(2k)", size: "1152x2048", width: 1152, height: 2048, icon: "portrait" },
-    { value: "16:9-4k", label: "16:9(4k)", size: "3840x2160", width: 3840, height: 2160, icon: "landscape" },
-    { value: "9:16-4k", label: "9:16(4k)", size: "2160x3840", width: 2160, height: 3840, icon: "portrait" },
+    { value: "4:3", label: "4:3", width: 1344, height: 1024, icon: "landscape" },
+    { value: "3:4", label: "3:4", width: 1024, height: 1344, icon: "portrait" },
     { value: "auto", label: "auto", width: 0, height: 0, icon: "auto" },
 ];
 
@@ -42,11 +36,11 @@ type ImageSettingsPanelProps = {
 
 export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
-    const quality = config.quality || "auto";
+    const resolution = normalizeImageResolutionValue(config.quality);
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
-    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
+    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], resolution);
     const selectAspect = (value: string) => {
         const option = aspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.size || option?.value || "auto");
@@ -71,10 +65,10 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
             >
                 {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
                 <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>质量</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {qualityOptions.map((item) => (
-                            <OptionPill key={item.value} selected={quality === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                    <SettingTitle color={theme.node.muted}>分辨率</SettingTitle>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {resolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
@@ -145,8 +139,12 @@ export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; ch
     );
 }
 
+export function imageResolutionLabel(value: string) {
+    return ({ auto: "1K", high: "4K", medium: "2K", low: "1K", "1k": "1K", "2k": "2K", "4k": "4K" } as Record<string, string>)[value] || value;
+}
+
 export function imageQualityLabel(value: string) {
-    return ({ auto: "自动", high: "高", medium: "中", low: "低" } as Record<string, string>)[value] || value;
+    return imageResolutionLabel(value);
 }
 
 export function imageSizeLabel(size: string) {
@@ -233,12 +231,30 @@ function SettingTitle({ children, color }: { children: string; color: string }) 
     );
 }
 
-function readSizeDimensions(size: string, fallback: { width: number; height: number }) {
+function normalizeImageResolutionValue(value: string) {
+    if (value === "4k") return "high";
+    if (value === "2k") return "medium";
+    return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
+function imageResolutionHeight(value: string) {
+    if (value === "high") return 2160;
+    if (value === "medium") return 1440;
+    return 1024;
+}
+
+function sizeFromAspect(aspect: { value?: string; width: number; height: number }, resolution: string) {
+    if (!aspect.width || !aspect.height) return { width: 0, height: 0 };
+    const base = imageResolutionHeight(resolution);
+    const ratio = aspect.width / aspect.height;
+    if (ratio >= 1) return { width: Math.round((base * ratio) / 16) * 16, height: base };
+    return { width: base, height: Math.round((base / ratio) / 16) * 16 };
+}
+
+function readSizeDimensions(size: string, fallback: { width: number; height: number }, resolution: string) {
     const match = size?.match(/^(\d+)x(\d+)$/);
-    return {
-        width: match ? Number(match[1]) : fallback.width,
-        height: match ? Number(match[2]) : fallback.height,
-    };
+    if (match) return { width: Number(match[1]), height: Number(match[2]) };
+    return sizeFromAspect(fallback, resolution);
 }
 
 function alignDimension(value: number, enabled: boolean) {

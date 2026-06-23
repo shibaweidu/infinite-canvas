@@ -113,17 +113,18 @@ export function CanvasConfigComposer({ value, inputs, onChange, onClose }: Canva
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={stopCanvasInteraction}
             onPointerDown={stopCanvasInteraction}
+            onContextMenu={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
             <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-baseline gap-2">
                     <div className="shrink-0 text-xs font-semibold">组装提示词</div>
-                    <div className="truncate text-[11px] opacity-55">@ 引用已连接素材，发送前按当前连接重新编号</div>
+                    <div className="truncate text-[11px] opacity-55">@ 引用已连接的图片、文本、视频、音频</div>
                 </div>
                 <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
             </div>
             <div className="relative rounded-xl border" style={{ background: theme.node.fill, borderColor: theme.node.stroke }}>
-                {!value.trim() ? <div className="pointer-events-none absolute left-3 top-2 text-sm leading-7" style={{ color: theme.node.placeholder }}>输入提示词，按 @ 引用连接的图片或文本</div> : null}
+                {!value.trim() ? <div className="pointer-events-none absolute left-3 top-2 text-sm leading-7" style={{ color: theme.node.placeholder }}>输入提示词，按 @ 引用连接素材</div> : null}
                 <div
                     ref={editorRef}
                     contentEditable
@@ -206,7 +207,7 @@ function MentionMenu({ inputs, allInputs, activeIndex, theme, onSelect }: { inpu
                     <ResourcePreview input={input} />
                     <span className="min-w-0 flex-1">
                         <span className="block font-medium">{resourceLabel(input, allInputs)}</span>
-                        <span className="block truncate opacity-65">{input.text || input.title}</span>
+                        <span className="block truncate opacity-65">{resourceDescription(input)}</span>
                     </span>
                 </button>
             ))}
@@ -231,10 +232,12 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
     wrapper.dataset.referenceNodeId = input.nodeId;
     wrapper.className = "mx-px inline-flex h-7 max-w-40 items-center justify-center overflow-hidden rounded-md border px-1 text-xs leading-none align-middle";
     Object.assign(wrapper.style, chipStyle(theme));
+    const label = resourceLabel(input, inputs);
+    wrapper.title = [label, resourceDescription(input)].filter(Boolean).join(" · ");
     if (input.type === "image" && input.image) {
         const image = document.createElement("img");
         image.src = input.image.dataUrl;
-        image.alt = input.title;
+        image.alt = label;
         image.className = "size-6 rounded object-cover";
         wrapper.className = "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded align-middle";
         wrapper.appendChild(image);
@@ -244,10 +247,9 @@ function createReferenceChip(input: NodeGenerationInput, inputs: NodeGenerationI
             onImagePreview(input.image?.dataUrl || "");
         });
     } else {
-        wrapper.title = input.text || input.title;
         const text = document.createElement("span");
         text.className = "block truncate";
-        text.textContent = input.type === "text" ? input.text || input.title : input.title;
+        text.textContent = label;
         wrapper.appendChild(text);
     }
     return wrapper;
@@ -359,6 +361,13 @@ function resourceLabel(input: NodeGenerationInput, inputs: NodeGenerationInput[]
     if (input.type === "video") return `视频${index + 1}`;
     if (input.type === "audio") return `音频${index + 1}`;
     return `文本${index + 1}`;
+}
+
+function resourceDescription(input: NodeGenerationInput) {
+    if (input.type === "text") return input.text || input.title;
+    if (input.type === "image") return input.title || input.image?.name || "图片素材";
+    if (input.type === "video") return input.title || input.video?.name || "视频素材";
+    return input.title || input.audio?.name || "音频素材";
 }
 
 function chipStyle(theme: (typeof canvasThemes)[keyof typeof canvasThemes]): CSSProperties {

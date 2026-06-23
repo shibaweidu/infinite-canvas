@@ -79,7 +79,7 @@ export default function AdminUsersPage() {
             render: (_, item) => <Tag color={item.status === "ban" ? "red" : "green"}>{item.status === "ban" ? "禁用" : "正常"}</Tag>,
         },
         {
-            title: "算力点",
+            title: "积分",
             dataIndex: "credits",
             width: 100,
             render: (_, item) => <Typography.Text>{item.credits}</Typography.Text>,
@@ -89,6 +89,12 @@ export default function AdminUsersPage() {
             dataIndex: "linuxDoId",
             width: 140,
             render: (_, item) => <Typography.Text type="secondary">{item.linuxDoId || "-"}</Typography.Text>,
+        },
+        {
+            title: "Google",
+            dataIndex: "googleId",
+            width: 140,
+            render: (_, item) => <Typography.Text type="secondary">{item.googleId || "-"}</Typography.Text>,
         },
         {
             title: "最近登录",
@@ -124,7 +130,7 @@ export default function AdminUsersPage() {
                                 <Form.Item label="关键词">
                                     <Input.Search
                                         value={keywordText}
-                                        placeholder="搜索用户名、昵称、邮箱或 Linux.do ID"
+                                        placeholder="搜索用户名、昵称、邮箱、Linux.do ID 或 Google ID"
                                         allowClear
                                         enterButton={<SearchOutlined />}
                                         onSearch={() => searchUsers(keywordText)}
@@ -223,10 +229,10 @@ export default function AdminUsersPage() {
                     {editingUser?.id ? (
                         <>
                             <Divider style={{ margin: "4px 0 16px" }} />
-                            <Typography.Text strong>算力点调整</Typography.Text>
+                            <Typography.Text strong>积分调整</Typography.Text>
                             <Row gutter={14}>
                                 <Col span={12}>
-                                    <Form.Item label="算力点">
+                                    <Form.Item label="积分">
                                         <Space.Compact style={{ width: "100%" }}>
                                             <Form.Item name="credits" noStyle>
                                                 <InputNumber min={0} precision={0} style={{ width: "100%" }} />

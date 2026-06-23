@@ -29,6 +29,7 @@ type User struct {
 	AffCount    int        `json:"affCount"`
 	InviterID   string     `json:"inviterId"`
 	GithubID    string     `json:"githubId"`
+	GoogleID    string     `json:"googleId" gorm:"index"`
 	LinuxDoID   string     `json:"linuxDoId" gorm:"index"`
 	WechatID    string     `json:"wechatId"`
 	Status      UserStatus `json:"status"`
@@ -83,7 +84,7 @@ const (
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
 )
 
-// CreditLog 用户算力点变更流水。
+// CreditLog 用户积分变更流水。
 type CreditLog struct {
 	ID        string        `json:"id" gorm:"primaryKey"`
 	UserID    string        `json:"userId" gorm:"index"`

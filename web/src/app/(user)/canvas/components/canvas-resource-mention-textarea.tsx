@@ -26,6 +26,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const overlayRef = useRef<HTMLDivElement | null>(null);
+    const caretAnchorRef = useRef<{ left: number; top: number; height: number } | null>(null);
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const candidates = useMemo(() => {
@@ -58,6 +59,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
             closeMention();
             return;
         }
+        caretAnchorRef.current = textareaRef.current ? measureTextareaCaret(textareaRef.current, cursor) : null;
         setMention({ start: cursor - match[2].length - 1, query: match[2] });
         setActiveIndex(0);
     };
@@ -81,15 +83,23 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const mergedStyle = {
         ...(style || {}),
         color: activeLabels.length ? "transparent" : style?.color,
-        caretColor: style?.color || theme.node.text,
+        caretColor: theme.node.text,
         ...(activeLabels.length ? { background: "transparent", backgroundColor: "transparent" } : {}),
     } as CSSProperties;
-    const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
+    const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} anchor={caretAnchorRef.current} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
+    const stopCanvasInteraction = (event: MouseEvent | PointerEvent) => event.stopPropagation();
 
     return (
-        <div className={`relative h-full w-full ${containerClassName || ""}`}>
+        <div
+            data-canvas-no-zoom
+            className={`relative h-full w-full ${containerClassName || ""}`}
+            onMouseDown={stopCanvasInteraction}
+            onPointerDown={stopCanvasInteraction}
+            onContextMenu={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+        >
             {activeLabels.length ? (
-                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
+                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 z-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
                     <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
                 </div>
             ) : null}
@@ -101,7 +111,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     else if (forwardedRef) forwardedRef.current = node;
                 }}
                 value={value}
-                className={className}
+                className={`${className || ""} relative z-10`}
                 style={mergedStyle}
                 onChange={(event) => {
                     const next = event.target.value;
@@ -132,12 +142,19 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                             return;
                         }
                     }
+                    if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReferenceLabel(event.key, value, activeLabels, event.currentTarget)) {
+                        event.preventDefault();
+                        return;
+                    }
                     if (event.key === "Enter" && onSubmit && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
                         event.preventDefault();
                         onSubmit();
                         return;
                     }
                     onKeyDown?.(event);
+                    requestAnimationFrame(() => {
+                        if (textareaRef.current) syncMention(textareaRef.current.value, textareaRef.current.selectionStart);
+                    });
                 }}
                 onScroll={(event) => {
                     syncOverlayScroll();
@@ -151,7 +168,42 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
             {menu}
         </div>
     );
+
+    function deleteAdjacentReferenceLabel(key: string, currentValue: string, labels: string[], textarea: HTMLTextAreaElement) {
+        if (!labels.length || textarea.selectionStart !== textarea.selectionEnd) return false;
+        const cursor = textarea.selectionStart;
+        const previous = key === "Backspace";
+        for (const label of labels) {
+            const range = previous ? labelRangeBeforeCursor(currentValue, cursor, label) : labelRangeAfterCursor(currentValue, cursor, label);
+            if (!range) continue;
+            const nextValue = `${currentValue.slice(0, range.start)}${currentValue.slice(range.end)}`;
+            updateValue(nextValue, range.start);
+            return true;
+        }
+        return false;
+    }
 });
+
+function labelRangeBeforeCursor(value: string, cursor: number, label: string) {
+    const left = value.slice(0, cursor);
+    const trimmedEnd = left.replace(/[ \t]+$/, "");
+    if (!trimmedEnd.endsWith(label)) return null;
+    const start = trimmedEnd.length - label.length;
+    const end = cursor;
+    if (start > 0 && !/\s/.test(value[start - 1])) return null;
+    return { start, end };
+}
+
+function labelRangeAfterCursor(value: string, cursor: number, label: string) {
+    const right = value.slice(cursor);
+    const leadingSpace = right.match(/^[ \t]*/)?.[0].length || 0;
+    const start = cursor;
+    const labelStart = cursor + leadingSpace;
+    if (value.slice(labelStart, labelStart + label.length) !== label) return null;
+    const end = labelStart + label.length + (value[labelStart + label.length] === " " ? 1 : 0);
+    if (end < value.length && !/\s/.test(value[end])) return null;
+    return { start, end };
+}
 
 function MentionHighlightText({ value, labels, placeholder }: { value: string; labels: string[]; placeholder: boolean }) {
     if (placeholder) return <span className="opacity-45">{value}</span>;
@@ -172,16 +224,18 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
     );
 }
 
-function MentionMenu({ textarea, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
+function MentionMenu({ textarea, anchor, references, activeIndex, theme, onSelect }: { textarea: HTMLTextAreaElement; anchor: { left: number; top: number; height: number } | null; references: CanvasResourceReference[]; activeIndex: number; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect: (reference: CanvasResourceReference) => void }) {
     const selectedRef = useRef(false);
     const rect = textarea.getBoundingClientRect();
     const boundary = textarea.closest(".ant-modal-content")?.getBoundingClientRect() || { left: 8, top: 8, right: window.innerWidth - 8, bottom: window.innerHeight - 8 };
     const menuWidth = 256;
     const maxMenuHeight = 224;
     const gap = 6;
-    const left = clamp(rect.left, boundary.left + 8, boundary.right - menuWidth - 8);
-    const showAbove = rect.bottom + gap + maxMenuHeight > boundary.bottom && rect.top - gap - maxMenuHeight >= boundary.top;
-    const top = clamp(showAbove ? rect.top - gap - maxMenuHeight : rect.bottom + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
+    const anchorLeft = anchor?.left ?? rect.left + 12;
+    const anchorTop = anchor ? anchor.top + anchor.height : rect.top + 32;
+    const left = clamp(anchorLeft, boundary.left + 8, boundary.right - menuWidth - 8);
+    const showAbove = anchorTop + gap + maxMenuHeight > boundary.bottom && anchorTop - gap - maxMenuHeight >= boundary.top;
+    const top = clamp(showAbove ? anchorTop - gap - maxMenuHeight : anchorTop + gap, boundary.top + 8, boundary.bottom - maxMenuHeight - 8);
 
     const stopCanvasInteraction = (event: PointerEvent | MouseEvent) => {
         event.stopPropagation();
@@ -239,6 +293,62 @@ function ReferencePreview({ reference }: { reference: CanvasResourceReference })
             <Icon className="size-4" />
         </span>
     );
+}
+
+function measureTextareaCaret(textarea: HTMLTextAreaElement, cursor: number) {
+    const style = window.getComputedStyle(textarea);
+    const mirror = document.createElement("div");
+    const marker = document.createElement("span");
+    [
+        "box-sizing",
+        "width",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "font-style",
+        "letter-spacing",
+        "text-transform",
+        "line-height",
+        "padding-top",
+        "padding-right",
+        "padding-bottom",
+        "padding-left",
+        "border-top-width",
+        "border-right-width",
+        "border-bottom-width",
+        "border-left-width",
+        "word-break",
+        "overflow-wrap",
+        "tab-size",
+    ].forEach((property) => {
+        mirror.style.setProperty(property, style.getPropertyValue(property));
+    });
+    Object.assign(mirror.style, {
+        position: "fixed",
+        left: "-9999px",
+        top: "0",
+        height: "auto",
+        minHeight: "0",
+        maxHeight: "none",
+        overflow: "hidden",
+        visibility: "hidden",
+        whiteSpace: "pre-wrap",
+    });
+
+    mirror.textContent = textarea.value.slice(0, cursor);
+    marker.textContent = "\u200b";
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+
+    const markerRect = marker.getBoundingClientRect();
+    const textareaRect = textarea.getBoundingClientRect();
+    const mirrorRect = mirror.getBoundingClientRect();
+    const left = textareaRect.left + markerRect.left - mirrorRect.left - textarea.scrollLeft;
+    const top = textareaRect.top + markerRect.top - mirrorRect.top - textarea.scrollTop;
+    const lineHeight = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) || 18;
+    mirror.remove();
+
+    return { left, top, height: lineHeight };
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -21,6 +21,7 @@ export type AdminUser = {
     affCode: string;
     affCount: number;
     inviterId: string;
+    googleId: string;
     linuxDoId: string;
     status: "active" | "ban";
     lastLoginAt: string;
@@ -162,9 +163,38 @@ export type AdminModelChannel = {
     baseUrl: string;
     apiKey: string;
     models: string[];
+    modelItems: AdminProviderModel[];
     weight: number;
     enabled: boolean;
     remark: string;
+};
+
+export type AdminModelType = "text" | "image" | "video" | "audio";
+
+export type AdminResolutionCost = {
+    resolution: string;
+    credits: number;
+};
+
+export type AdminModelApiRoute = {
+    path: string;
+    enabled: boolean;
+};
+
+export type AdminProviderModel = {
+    model: string;
+    name: string;
+    type: AdminModelType;
+    selected: boolean;
+    enabled: boolean;
+    thumbnailUrl: string;
+    providerDisplayName: string;
+    description: string;
+    tags: string[];
+    credits: number;
+    resolutionCosts: AdminResolutionCost[];
+    secondCredits: number;
+    apiRoutes: AdminModelApiRoute[];
 };
 
 export type AdminPublicModelChannelSettings = {
@@ -178,19 +208,82 @@ export type AdminPublicModelChannelSettings = {
     allowCustomChannel: boolean;
 };
 
+export type AdminProjectVisualStyle = {
+    category: string;
+    name: string;
+    prompt: string;
+    coverUrl: string;
+    previewUrls?: string[];
+};
+
+export type AdminProjectStoryPreset = {
+    title: string;
+    text: string;
+};
+
+export type AdminProjectBriefSettings = {
+    genres: string[];
+    styleCategories: string[];
+    visualStyles: AdminProjectVisualStyle[];
+    storyPresets: AdminProjectStoryPreset[];
+};
+
+export type AdminSiteNavigationItem = {
+    id: string;
+    label: string;
+    path: string;
+    enabled: boolean;
+    sort: number;
+};
+
+export type AdminSiteSettings = {
+    logoUrl: string;
+    name: string;
+    slogan: string;
+    navigation: AdminSiteNavigationItem[];
+};
+
 export type AdminModelCost = {
     model: string;
+    upstreamModel: string;
+    name: string;
+    type: AdminModelType;
+    thumbnailUrl: string;
+    providerName: string;
+    providerEndpoint: string;
+    providerDisplayName: string;
+    description: string;
+    tags: string[];
     credits: number;
+    resolutionCosts: AdminResolutionCost[];
+    secondCredits: number;
 };
 
 export type AdminPublicSettings = {
     modelChannel: AdminPublicModelChannelSettings;
+    projectBrief: AdminProjectBriefSettings;
     auth: {
         allowRegister: boolean;
+        emailRegister: {
+            enabled: boolean;
+            emailRequired: boolean;
+            codeEnabled: boolean;
+        };
         linuxDo: {
             enabled: boolean;
         };
+        google: {
+            enabled: boolean;
+        };
     };
+    objectStorage: {
+        enabled: boolean;
+        provider: string;
+        bucket: string;
+        region: string;
+        publicUrl: string;
+    };
+    site: AdminSiteSettings;
 };
 
 export type AdminPrivateSettings = {
@@ -200,10 +293,35 @@ export type AdminPrivateSettings = {
         cron: string;
     };
     auth: {
+        email: {
+            smtpHost: string;
+            smtpPort: number;
+            smtpUsername: string;
+            smtpPassword: string;
+            fromEmail: string;
+            fromName: string;
+            subject: string;
+        };
         linuxDo: {
             clientId: string;
             clientSecret: string;
         };
+        google: {
+            clientId: string;
+            clientSecret: string;
+        };
+    };
+    objectStorage: {
+        enabled: boolean;
+        provider: string;
+        endpoint: string;
+        region: string;
+        bucket: string;
+        accessKeyId: string;
+        secretAccessKey: string;
+        publicUrl: string;
+        prefix: string;
+        forcePathStyle: boolean;
     };
 };
 

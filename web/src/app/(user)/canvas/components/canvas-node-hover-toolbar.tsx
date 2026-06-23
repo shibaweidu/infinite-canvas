@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
-import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
+import { Bold, ChevronsDownUp, ChevronsUpDown, Copy, Download, Ellipsis, FolderPlus, Heading1, Heading2, Heading3, Image as ImageIcon, Info, Italic, List, ListOrdered, MessageSquare, Minus, Music2, Palette, Pencil, Pilcrow, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../types";
+import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata, type ViewportTransform } from "../types";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
 import { IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
@@ -21,6 +21,9 @@ type CanvasNodeHoverToolbarProps = {
     onEditText: (node: CanvasNodeData) => void;
     onDecreaseFont: (node: CanvasNodeData) => void;
     onIncreaseFont: (node: CanvasNodeData) => void;
+    onMetadataChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
+    onContentChange: (nodeId: string, content: string) => void;
+    onToggleTextExpanded: (node: CanvasNodeData) => void;
     onToggleDialog: (node: CanvasNodeData) => void;
     onGenerateImage: (node: CanvasNodeData) => void;
     onUpload: (node: CanvasNodeData) => void;
@@ -57,6 +60,9 @@ export function CanvasNodeHoverToolbar({
     onEditText,
     onDecreaseFont,
     onIncreaseFont,
+    onMetadataChange,
+    onContentChange,
+    onToggleTextExpanded,
     onToggleDialog,
     onGenerateImage,
     onUpload,
@@ -80,6 +86,7 @@ export function CanvasNodeHoverToolbar({
     const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
     const { message } = App.useApp();
     const copyText = useCopyText();
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     useEffect(() => {
         try {
@@ -100,8 +107,6 @@ export function CanvasNodeHoverToolbar({
 
     if (!node) return null;
 
-    const left = viewport.x + (node.position.x + node.width / 2) * viewport.k;
-    const top = viewport.y + node.position.y * viewport.k - 14;
     const isImage = node.type === CanvasNodeType.Image;
     const isVideo = node.type === CanvasNodeType.Video;
     const isAudio = node.type === CanvasNodeType.Audio;
@@ -109,8 +114,13 @@ export function CanvasNodeHoverToolbar({
     const hasVideo = isVideo && Boolean(node.metadata?.content);
     const hasAudio = isAudio && Boolean(node.metadata?.content);
     const isText = node.type === CanvasNodeType.Text;
+    const isAgent = node.type === CanvasNodeType.Agent || node.type === CanvasNodeType.ScriptAgent || node.type === CanvasNodeType.CharacterAgent || node.type === CanvasNodeType.StoryboardAgent;
     const isConfig = node.type === CanvasNodeType.Config;
-    const canOpenDialog = isText || hasImage || isVideo;
+    const hasTextEditToolbar = isText && (node.metadata?.content?.trim() || node.metadata?.status === "loading");
+    const left = viewport.x + (node.position.x + node.width / 2) * viewport.k;
+    const top = viewport.y + node.position.y * viewport.k - (hasTextEditToolbar ? 128 : 56);
+    const textToolbarTop = viewport.y + node.position.y * viewport.k - 56;
+    const canOpenDialog = isText || isAgent || hasImage || isVideo;
     const canRetry = node.metadata?.status === "error";
     const quickImageToolIdSet = new Set(quickImageToolIds);
     const copyImagePrompt = (target: CanvasNodeData) => {
@@ -136,7 +146,7 @@ export function CanvasNodeHoverToolbar({
     ];
     const nodeToolbarTools: ToolbarTool[] = [
         ...(canRetry ? [{ id: "retry", title: "重新生成", label: "重试", icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
-        ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: "加入我的素材", label: "存素材", icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
+        ...(hasImage || hasVideo || isText || isAgent ? [{ id: "saveAsset", title: "加入我的素材", label: "存素材", icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
         ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: hasAudio ? "下载音频" : hasVideo ? "下载视频" : "下载图片", label: "下载", icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
         ...(canOpenDialog ? [{ id: "edit", title: "编辑", label: "编辑", icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
         ...(isText ? [{ id: "editText", title: "编辑文本", label: "编辑文字", icon: <Pencil className="size-4" />, onClick: () => onEditText(node) }] : []),
@@ -177,8 +187,8 @@ export function CanvasNodeHoverToolbar({
     return (
         <>
             <div
-                className="absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
-                style={{ left, top }}
+                className="absolute z-[70] flex -translate-x-1/2 -translate-y-full items-center gap-1 overflow-visible rounded-xl border px-2 py-2 text-xs font-medium shadow-xl backdrop-blur"
+                style={{ left, top, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
                     if (!imageToolSettingsOpen) onLeave();
@@ -187,9 +197,9 @@ export function CanvasNodeHoverToolbar({
                 onPointerDown={(event) => event.stopPropagation()}
             >
                 {toolbarTools.map((tool) => (
-                    <ToolbarAction key={tool.id} {...tool} showLabel={showImageToolLabels} />
+                    <ToolbarAction key={tool.id} {...tool} showLabel={showImageToolLabels} theme={theme} />
                 ))}
-                {hasImage ? <ToolbarAction id="more" title="配置快捷工具" label="更多" icon={<Ellipsis className="size-4" />} active={imageToolSettingsOpen} onClick={openImageToolSettings} showLabel={showImageToolLabels} /> : null}
+                {hasImage ? <ToolbarAction id="more" title="配置快捷工具" label="更多" icon={<Ellipsis className="size-4" />} active={imageToolSettingsOpen} onClick={openImageToolSettings} showLabel={showImageToolLabels} theme={theme} /> : null}
             </div>
             {hasImage ? (
                 <ImageToolSettingsModal
@@ -201,6 +211,18 @@ export function CanvasNodeHoverToolbar({
                     onShowLabelsChange={setDraftShowImageToolLabels}
                     onCancel={closeImageToolSettings}
                     onSave={saveImageToolSettings}
+                />
+            ) : null}
+            {hasTextEditToolbar ? (
+                <TextEditToolbar
+                    node={node}
+                    left={left}
+                    top={textToolbarTop}
+                    onKeep={onKeep}
+                    onLeave={onLeave}
+                    onMetadataChange={onMetadataChange}
+                    onContentChange={onContentChange}
+                    onToggleTextExpanded={onToggleTextExpanded}
                 />
             ) : null}
         </>
@@ -253,7 +275,7 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                     {view === "info" ? (
                         <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
                             <InfoRow label="ID" value={node.id} />
-                            <InfoRow label="类型" value={node.type === CanvasNodeType.Text ? "文本" : node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : node.type === CanvasNodeType.Audio ? "音频" : "生成配置"} />
+                            <InfoRow label="类型" value={nodeTypeLabel(node.type)} />
                             <InfoRow label="尺寸" value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
                             <InfoRow label="位置" value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label="状态" value={node.metadata?.status || "idle"} />
@@ -277,12 +299,117 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
     );
 }
 
-function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false }: ToolbarTool & { showLabel: boolean }) {
+function TextEditToolbar({
+    node,
+    left,
+    top,
+    onKeep,
+    onLeave,
+    onMetadataChange,
+    onContentChange,
+    onToggleTextExpanded,
+}: {
+    node: CanvasNodeData;
+    left: number;
+    top: number;
+    onKeep: (nodeId: string) => void;
+    onLeave: () => void;
+    onMetadataChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
+    onContentChange: (nodeId: string, content: string) => void;
+    onToggleTextExpanded: (node: CanvasNodeData) => void;
+}) {
+    const content = node.metadata?.content || "";
+    const textStyle = node.metadata?.textStyle || "body";
+    const setTextStyle = (style: NonNullable<CanvasNodeMetadata["textStyle"]>, fontSize: number) => onMetadataChange(node.id, { textStyle: style, fontSize });
+    const appendText = (value: string) => {
+        const prefix = content && !content.endsWith("\n") ? "\n" : "";
+        onContentChange(node.id, `${content}${prefix}${value}`);
+    };
+
+    return (
+        <div
+            className="absolute z-[75] flex h-16 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[22px] border border-white/10 bg-[#181818] px-3 text-[#d7d7d7] shadow-[0_16px_42px_rgba(0,0,0,.35)]"
+            style={{ left, top }}
+            onMouseEnter={() => onKeep(node.id)}
+            onMouseLeave={onLeave}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
+        >
+            <TextToolButton title="背景色" active={Boolean(node.metadata?.textBackground)} onClick={() => onMetadataChange(node.id, { textBackground: node.metadata?.textBackground ? "" : "rgba(255,255,255,0.08)" })}>
+                <Palette className="size-5" />
+            </TextToolButton>
+            <DarkDivider />
+            <TextToolButton title="标题 1" active={textStyle === "h1"} onClick={() => setTextStyle("h1", 26)}>
+                <Heading1 className="size-5" />
+            </TextToolButton>
+            <TextToolButton title="标题 2" active={textStyle === "h2"} onClick={() => setTextStyle("h2", 22)}>
+                <Heading2 className="size-5" />
+            </TextToolButton>
+            <TextToolButton title="标题 3" active={textStyle === "h3"} onClick={() => setTextStyle("h3", 18)}>
+                <Heading3 className="size-5" />
+            </TextToolButton>
+            <TextToolButton title="正文" active={textStyle === "body"} onClick={() => setTextStyle("body", 14)}>
+                <Pilcrow className="size-5" />
+            </TextToolButton>
+            <DarkDivider />
+            <TextToolButton title="粗体" active={Boolean(node.metadata?.textBold)} onClick={() => onMetadataChange(node.id, { textBold: !node.metadata?.textBold })}>
+                <Bold className="size-5" />
+            </TextToolButton>
+            <TextToolButton title="斜体" active={Boolean(node.metadata?.textItalic)} onClick={() => onMetadataChange(node.id, { textItalic: !node.metadata?.textItalic })}>
+                <Italic className="size-5" />
+            </TextToolButton>
+            <DarkDivider />
+            <TextToolButton title="无序列表" onClick={() => appendText("- ")}>
+                <List className="size-5" />
+            </TextToolButton>
+            <TextToolButton title="有序列表" onClick={() => appendText("1. ")}>
+                <ListOrdered className="size-5" />
+            </TextToolButton>
+            <DarkDivider />
+            <TextToolButton title="分割线" onClick={() => appendText("---")}>
+                <Minus className="size-5" />
+            </TextToolButton>
+            <DarkDivider />
+            <TextToolButton title="复制内容" onClick={() => void navigator.clipboard?.writeText(content)}>
+                <Copy className="size-5" />
+            </TextToolButton>
+            <TextToolButton title={node.metadata?.textExpanded ? "收起编辑" : "展开编辑"} active={Boolean(node.metadata?.textExpanded)} onClick={() => onToggleTextExpanded(node)}>
+                {node.metadata?.textExpanded ? <ChevronsDownUp className="size-5" /> : <ChevronsUpDown className="size-5" />}
+            </TextToolButton>
+        </div>
+    );
+}
+
+function TextToolButton({ title, active = false, children, onClick }: { title: string; active?: boolean; children: ReactNode; onClick: () => void }) {
+    return (
+        <Tooltip title={title} placement="bottom" mouseEnterDelay={0.2}>
+            <button type="button" className={`grid size-12 place-items-center rounded-[15px] text-[#d7d7d7] transition hover:bg-white/10 ${active ? "bg-white/15 text-white" : "opacity-75"}`} onClick={onClick} aria-label={title}>
+                {children}
+            </button>
+        </Tooltip>
+    );
+}
+
+function DarkDivider() {
+    return <span className="mx-2 h-8 w-px bg-white/12" />;
+}
+
+function ToolbarAction({ title, label, icon, onClick, showLabel = true, active = false, danger = false, theme }: ToolbarTool & { showLabel?: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
     const hasText = showLabel && Boolean(label);
     return (
-        <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ body: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
-            <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap px-1.5 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
-                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
+        <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color={theme.toolbar.panel} styles={{ body: { color: theme.node.text, boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
+            <button type="button" className="group relative inline-flex h-8 items-center whitespace-nowrap rounded-lg transition hover:scale-[1.02]" style={{ color: danger ? "#f87171" : theme.toolbar.item }} onClick={onClick} aria-label={title}>
+                <span
+                    className={`flex h-8 items-center ${hasText ? "gap-1.5 px-2" : "justify-center px-2"} rounded-lg transition`}
+                    style={{ background: active ? theme.toolbar.activeBg : "transparent", color: active ? theme.toolbar.activeText : danger ? "#f87171" : theme.toolbar.item }}
+                    onMouseEnter={(event) => {
+                        if (!active) event.currentTarget.style.background = theme.toolbar.itemHover;
+                    }}
+                    onMouseLeave={(event) => {
+                        if (!active) event.currentTarget.style.background = "transparent";
+                    }}
+                >
                     {icon}
                     {hasText ? <span>{label}</span> : null}
                 </span>
@@ -291,6 +418,20 @@ function ToolbarAction({ title, label, icon, onClick, showLabel, active = false,
     );
 }
 
+function nodeTypeLabel(type: CanvasNodeType) {
+    if (type === CanvasNodeType.Text) return "文本";
+    if (type === CanvasNodeType.Image) return "图片";
+    if (type === CanvasNodeType.Video) return "视频";
+    if (type === CanvasNodeType.Audio) return "音频";
+    if (type === CanvasNodeType.Agent) return "智能体";
+    if (type === CanvasNodeType.ScriptAgent) return "剧本Agent";
+    if (type === CanvasNodeType.CharacterAgent) return "角色Agent";
+    if (type === CanvasNodeType.StoryboardAgent) return "分镜Agent";
+    if (type === CanvasNodeType.ProjectBrief) return "故事设定";
+    if (type === CanvasNodeType.SubjectBoard) return "角色板";
+    if (type === CanvasNodeType.Storyboard) return "分镜板";
+    return "生成配置";
+}
 function InfoRow({ label, value }: { label: string; value: ReactNode }) {
     return (
         <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">

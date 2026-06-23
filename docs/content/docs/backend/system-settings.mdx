@@ -19,8 +19,8 @@ description: settings 表中 public 和 private 配置结构说明
   "modelChannel": {
     "availableModels": ["gpt-5.5", "gpt-image-2"],
     "modelCosts": [
-      { "model": "gpt-5.5", "credits": 1 },
-      { "model": "gpt-image-2", "credits": 10 }
+      { "model": "gpt-5.5", "type": "text", "credits": 1 },
+      { "model": "gpt-image-2", "type": "image", "credits": 10, "resolutionCosts": [{ "resolution": "1024x1024", "credits": 10 }] }
     ],
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
@@ -28,11 +28,36 @@ description: settings 表中 public 和 private 配置结构说明
     "systemPrompt": "",
     "allowCustomChannel": true
   },
+  "projectBrief": {
+    "genres": ["科幻", "悬疑", "广告"],
+    "styleCategories": ["国风", "欧美风格"],
+    "visualStyles": [
+      { "category": "欧美风格", "name": "电影感", "prompt": "电影级摄影，真实光影。", "coverUrl": "" }
+    ],
+    "storyPresets": [
+      { "title": "科幻追逐", "text": "一个年轻程序员深夜发现自己开发的 AI 正在现实世界中追捕他。" }
+    ]
+  },
   "auth": {
     "allowRegister": true,
+    "emailRegister": {
+      "enabled": true,
+      "emailRequired": false,
+      "codeEnabled": false
+    },
     "linuxDo": {
       "enabled": false
+    },
+    "google": {
+      "enabled": false
     }
+  },
+  "objectStorage": {
+    "enabled": false,
+    "provider": "s3",
+    "bucket": "",
+    "region": "",
+    "publicUrl": ""
   }
 }
 ```
@@ -40,14 +65,16 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `modelChannel` | object | 模型渠道公开配置组 |
+| `projectBrief` | object | 项目设定节点的题材、视觉风格和故事预设配置 |
 | `auth` | object | 认证相关公开配置 |
+| `objectStorage` | object | 对象存储公开配置，只暴露启用状态和公开访问所需信息 |
 
 `modelChannel` 字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `availableModels` | string[] | 系统可用模型；保存设置时会自动合并所有已启用私有渠道的模型 |
-| `modelCosts` | object[] | 模型算力点配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
+| `availableModels` | string[] | 系统可用模型，由后台模型供应商中已选择且已启用的模型同步生成 |
+| `modelCosts` | object[] | 模型积分配置，后端模型接口调用前按模型预扣，上游失败时返还；未配置默认不扣除 |
 | `defaultModel` | string | 默认模型，从 `availableModels` 中选择；为空或失效时优先选择文本模型 |
 | `defaultImageModel` | string | 默认图片模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedream`、`image`、`gpt-image` 模型 |
 | `defaultVideoModel` | string | 默认视频模型，从 `availableModels` 中选择；为空或失效时优先选择 `seedance`、`video` 模型 |
@@ -60,7 +87,15 @@ description: settings 表中 public 和 private 配置结构说明
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `model` | string | 模型名称 |
-| `credits` | number | 每次后端模型接口调用前预扣的算力点 |
+| `name` | string | 模型展示名称 |
+| `type` | string | 模型分类：`text`、`image`、`video`、`audio` |
+| `thumbnailUrl` | string | 模型缩略图地址 |
+| `providerDisplayName` | string | 展示用供应商名称 |
+| `description` | string | 模型描述 |
+| `tags` | string[] | 模型标签 |
+| `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `secondCredits` | number | 视频模型每秒扣除的积分 |
 
 用户侧请求模式：
 
@@ -69,12 +104,45 @@ description: settings 表中 public 和 private 配置结构说明
 | 云端渠道 | 使用后端 `/api/v1/*` 代理接口，请求会按模型名匹配 `private.value.channels` 中的可用渠道 |
 | 本地直连 | 默认可选；`allowCustomChannel` 关闭后不可选，用户在浏览器本地配置 `baseUrl`、`apiKey` 和模型列表后直接请求模型接口 |
 
+`projectBrief` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `genres` | string[] | 项目设定节点前台可选题材 |
+| `styleCategories` | string[] | 风格库弹窗分类标签 |
+| `visualStyles` | object[] | 视觉风格列表，包含分类、名称、提示词和封面 |
+| `storyPresets` | object[] | 故事简述预设 |
+
+`visualStyles` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `category` | string | 风格分类 |
+| `name` | string | 风格名称 |
+| `prompt` | string | 风格提示词；前台项目设定节点选中后会传给下游 |
+| `coverUrl` | string | 风格封面地址，可为上传后的 data URL |
+| `previewUrls` | string[] | 风格卡片右下角预览图，后台页面暂不维护 |
+
 `auth` 字段：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `allowRegister` | boolean | 是否允许用户注册，默认允许；关闭后注册入口隐藏，注册接口拒绝新用户创建 |
+| `emailRegister.enabled` | boolean | 是否开启邮箱/账号密码注册入口，关闭后注册页只保留已启用的第三方登录 |
+| `emailRegister.emailRequired` | boolean | 注册时是否要求填写邮箱 |
+| `emailRegister.codeEnabled` | boolean | 是否开启注册邮箱验证码；开启后注册必须先发送并填写验证码 |
 | `linuxDo.enabled` | boolean | 是否开启 Linux.do 登录 |
+| `google.enabled` | boolean | 是否开启 Google 注册登录入口 |
+
+`objectStorage` 公开字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | boolean | 是否开启对象存储 |
+| `provider` | string | 存储供应商标识，如 `s3`、`oss`、`cos` |
+| `bucket` | string | Bucket 名称 |
+| `region` | string | Region |
+| `publicUrl` | string | 对外访问域名或 CDN 地址 |
 
 ## private.value
 
@@ -87,6 +155,23 @@ description: settings 表中 public 和 private 配置结构说明
       "baseUrl": "https://api.example.com",
       "apiKey": "sk-xxx",
       "models": ["gpt-5.5", "gpt-image-2"],
+      "modelItems": [
+        {
+          "model": "gpt-5.5",
+          "name": "GPT 5.5",
+          "type": "text",
+          "selected": true,
+          "enabled": true,
+          "thumbnailUrl": "",
+          "providerDisplayName": "默认渠道",
+          "description": "",
+          "tags": ["推荐"],
+          "credits": 1,
+          "resolutionCosts": [],
+          "secondCredits": 0,
+          "apiRoutes": [{ "path": "/v1/chat/completions", "enabled": true }]
+        }
+      ],
       "weight": 1,
       "enabled": true,
       "remark": ""
@@ -95,6 +180,37 @@ description: settings 表中 public 和 private 配置结构说明
   "promptSync": {
     "enabled": true,
     "cron": "*/5 * * * *"
+  },
+  "auth": {
+    "email": {
+      "smtpHost": "",
+      "smtpPort": 587,
+      "smtpUsername": "",
+      "smtpPassword": "",
+      "fromEmail": "",
+      "fromName": "",
+      "subject": "邮箱验证码"
+    },
+    "linuxDo": {
+      "clientId": "",
+      "clientSecret": ""
+    },
+    "google": {
+      "clientId": "",
+      "clientSecret": ""
+    }
+  },
+  "objectStorage": {
+    "enabled": false,
+    "provider": "s3",
+    "endpoint": "",
+    "region": "",
+    "bucket": "",
+    "accessKeyId": "",
+    "secretAccessKey": "",
+    "publicUrl": "",
+    "prefix": "",
+    "forcePathStyle": false
   }
 }
 ```
@@ -103,6 +219,8 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
+| `auth` | object | 第三方登录私有密钥配置 |
+| `objectStorage` | object | 对象存储私有连接配置 |
 
 `channels` 每项字段：
 
@@ -112,10 +230,29 @@ description: settings 表中 public 和 private 配置结构说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | OpenAI 兼容接口地址 |
 | `apiKey` | string | 渠道密钥 |
-| `models` | string[] | 该渠道可用模型 |
+| `models` | string[] | 该渠道已启用模型列表，由 `modelItems` 中启用项同步生成 |
+| `modelItems` | object[] | 渠道模型明细，包含模型展示信息、分类、启用状态、计费配置和 API 路由 |
 | `weight` | number | 渠道权重；同一模型有多个可用渠道时按权重随机 |
 | `enabled` | boolean | 是否启用 |
 | `remark` | string | 备注 |
+
+`modelItems` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `model` | string | 模型 ID |
+| `name` | string | 模型展示名称 |
+| `type` | string | 模型分类：`text`、`image`、`video` |
+| `selected` | boolean | 是否选入“模型选择”列表；只有已选择模型会进入积分设置 |
+| `enabled` | boolean | 是否启用给前台；只有已选择且启用的模型会进入公开模型 |
+| `thumbnailUrl` | string | 模型缩略图地址，可保存上传后的 data URL |
+| `providerDisplayName` | string | 展示用供应商名称 |
+| `description` | string | 模型描述 |
+| `tags` | string[] | 模型标签 |
+| `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `secondCredits` | number | 视频模型每秒扣除的积分 |
+| `apiRoutes` | object[] | API 路由选项，字段为 `path` 和 `enabled` |
 
 后端调用模型时，会从已启用、已配置 `baseUrl` 和 `apiKey`、且 `models` 包含目标模型的渠道中选择一个。
 
@@ -125,3 +262,55 @@ description: settings 表中 public 和 private 配置结构说明
 | --- | --- | --- |
 | `enabled` | boolean | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
+
+`auth` 私有字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `email.smtpHost` | string | SMTP 服务地址 |
+| `email.smtpPort` | number | SMTP 端口，默认 `587` |
+| `email.smtpUsername` | string | SMTP 用户名 |
+| `email.smtpPassword` | string | SMTP 密码，后台读取时隐藏 |
+| `email.fromEmail` | string | 发件邮箱 |
+| `email.fromName` | string | 发件人名称 |
+| `email.subject` | string | 验证码邮件标题 |
+| `linuxDo.clientId` | string | Linux.do OAuth App Client ID |
+| `linuxDo.clientSecret` | string | Linux.do OAuth App Client Secret，后台读取时隐藏 |
+| `google.clientId` | string | Google OAuth Client ID |
+| `google.clientSecret` | string | Google OAuth Client Secret，后台读取时隐藏 |
+
+`objectStorage` 私有字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `enabled` | boolean | 是否开启对象存储 |
+| `provider` | string | 存储供应商标识 |
+| `endpoint` | string | S3 兼容 Endpoint |
+| `region` | string | Region |
+| `bucket` | string | Bucket 名称 |
+| `accessKeyId` | string | Access Key ID |
+| `secretAccessKey` | string | Secret Access Key，后台读取时隐藏 |
+| `publicUrl` | string | 公开访问地址 |
+| `prefix` | string | 文件路径前缀 |
+| `forcePathStyle` | boolean | 是否使用 path-style 访问 |
+
+## site 字段
+
+`public.value.site` 用于站点公开展示配置，前台顶部导航和后台站点信息管理会读取该字段。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `logoUrl` | string | 网站 LOGO 地址，后台可上传图片并保存为 data URL，也可填写静态资源路径 |
+| `name` | string | 网站名称 |
+| `slogan` | string | 网站名称后的广告语 |
+| `navigation` | object[] | 前台顶部导航列表 |
+
+`navigation` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 导航唯一标识 |
+| `label` | string | 导航显示名称 |
+| `path` | string | 跳转路径，例如 `/canvas` |
+| `enabled` | boolean | 是否在前台显示 |
+| `sort` | number | 排序值，越小越靠前 |

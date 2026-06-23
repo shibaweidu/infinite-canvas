@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, DeleteOutlined, FormatPainterOutlined, LoadingOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, UploadOutlined } from "@ant-design/icons";
 import { json } from "@codemirror/lang-json";
 import { App, Button, Card, Checkbox, Col, Drawer, Flex, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import dynamic from "next/dynamic";
@@ -36,11 +36,35 @@ const emptySettings: AdminSettings = {
             systemPrompt: "",
             allowCustomChannel: true,
         },
-        auth: { allowRegister: true, linuxDo: { enabled: false } },
+        projectBrief: {
+            genres: ["科幻", "悬疑", "爱情", "冒险", "奇幻", "都市", "广告", "儿童动画", "纪录片"],
+            styleCategories: ["我的风格", "最近使用", "立体风格", "国风", "IP风格", "欧美风格", "日系风格", "插画风格", "韩系", "可爱Q版"],
+            visualStyles: [],
+            storyPresets: [],
+        },
+        auth: { allowRegister: true, emailRegister: { enabled: true, emailRequired: false, codeEnabled: false }, linuxDo: { enabled: false }, google: { enabled: false } },
+        objectStorage: { enabled: false, provider: "s3", bucket: "", region: "", publicUrl: "" },
+        site: {
+            logoUrl: "/logo.svg",
+            name: "无限画布",
+            slogan: "AI 创意工作台",
+            navigation: [
+                { id: "canvas", label: "我的画布", path: "/canvas", enabled: true, sort: 10 },
+                { id: "image", label: "生图工作台", path: "/image", enabled: true, sort: 20 },
+                { id: "video", label: "视频创作台", path: "/video", enabled: true, sort: 30 },
+                { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 40 },
+                { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 50 },
+            ],
+        },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "*/5 * * * *" }, auth: { linuxDo: { clientId: "", clientSecret: "" } } },
+    private: {
+        channels: [],
+        promptSync: { enabled: true, cron: "*/5 * * * *" },
+        auth: { email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", fromEmail: "", fromName: "", subject: "邮箱验证码" }, linuxDo: { clientId: "", clientSecret: "" }, google: { clientId: "", clientSecret: "" } },
+        objectStorage: { enabled: false, provider: "s3", endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: "", publicUrl: "", prefix: "", forcePathStyle: false },
+    },
 };
-const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], weight: 1, enabled: true, remark: "" };
+const emptyChannel: AdminModelChannel = { protocol: "openai", name: "", baseUrl: "", apiKey: "", models: [], modelItems: [], weight: 1, enabled: true, remark: "" };
 
 type SettingsTabKey = "public" | "private";
 type EditorMode = "visual" | "json";
@@ -357,6 +381,16 @@ export default function AdminSettingsPage() {
         message.success("已保存");
     }
 
+    const uploadLogo = (file?: File) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            form.setFieldValue(["public", "site", "logoUrl"], String(reader.result || ""));
+            message.success("LOGO 已更新，保存设置后生效");
+        };
+        reader.readAsDataURL(file);
+    };
+
     return (
         <main style={{ padding: 24 }}>
             <Flex vertical gap={16}>
@@ -414,6 +448,96 @@ export default function AdminSettingsPage() {
                             <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                                 <Row gutter={16}>
                                     <Col span={24}>
+                                        <Card size="small" title="站点信息" style={{ marginBottom: 16 }}>
+                                            <Row gutter={16} align="middle">
+                                                <Col xs={24} md={8}>
+                                                    <Form.Item label="LOGO 图标">
+                                                        <Space align="center" wrap>
+                                                            <Form.Item noStyle shouldUpdate={(prev, next) => prev.public?.site?.logoUrl !== next.public?.site?.logoUrl}>
+                                                                {({ getFieldValue }) => {
+                                                                    const logoUrl = getFieldValue(["public", "site", "logoUrl"]) || "/logo.svg";
+                                                                    return <img src={logoUrl} alt="LOGO" style={{ width: 44, height: 44, objectFit: "contain", borderRadius: 8, border: "1px solid var(--ant-color-border)", background: "var(--ant-color-bg-container)" }} />;
+                                                                }}
+                                                            </Form.Item>
+                                                            <Button icon={<UploadOutlined />} onClick={() => document.getElementById("site-logo-upload")?.click()}>
+                                                                上传替换
+                                                            </Button>
+                                                            <input id="site-logo-upload" type="file" accept="image/*" hidden onChange={(event) => uploadLogo(event.target.files?.[0])} />
+                                                        </Space>
+                                                    </Form.Item>
+                                                    <Form.Item name={["public", "site", "logoUrl"]} label="LOGO 地址">
+                                                        <Input placeholder="/logo.svg 或图片地址" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={8}>
+                                                    <Form.Item name={["public", "site", "name"]} label="网站名称">
+                                                        <Input placeholder="无限画布" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={8}>
+                                                    <Form.Item name={["public", "site", "slogan"]} label="广告语">
+                                                        <Input placeholder="AI 创意工作台" />
+                                                    </Form.Item>
+                                                </Col>
+                                            </Row>
+                                        </Card>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Card
+                                            size="small"
+                                            title="顶部导航"
+                                            extra={
+                                                <Form.List name={["public", "site", "navigation"]}>
+                                                    {(_, { add }) => (
+                                                        <Button size="small" icon={<PlusOutlined />} onClick={() => add({ id: `nav-${Date.now()}`, label: "新导航", path: "/", enabled: true, sort: 100 })}>
+                                                            新增导航选项
+                                                        </Button>
+                                                    )}
+                                                </Form.List>
+                                            }
+                                            style={{ marginBottom: 16 }}
+                                        >
+                                            <Form.List name={["public", "site", "navigation"]}>
+                                                {(fields, { remove }) => (
+                                                    <Flex vertical gap={10}>
+                                                        {fields.map((field) => (
+                                                            <Row key={field.key} gutter={12} align="middle">
+                                                                <Col xs={24} md={3}>
+                                                                    <Form.Item {...field} name={[field.name, "enabled"]} label="显示" valuePropName="checked">
+                                                                        <Switch />
+                                                                    </Form.Item>
+                                                                </Col>
+                                                                <Col xs={24} md={5}>
+                                                                    <Form.Item {...field} name={[field.name, "label"]} label="导航名称">
+                                                                        <Input placeholder="我的画布" />
+                                                                    </Form.Item>
+                                                                </Col>
+                                                                <Col xs={24} md={7}>
+                                                                    <Form.Item {...field} name={[field.name, "path"]} label="跳转路径">
+                                                                        <Input placeholder="/canvas" />
+                                                                    </Form.Item>
+                                                                </Col>
+                                                                <Col xs={24} md={4}>
+                                                                    <Form.Item {...field} name={[field.name, "sort"]} label="排序">
+                                                                        <InputNumber min={0} precision={0} className="!w-full" />
+                                                                    </Form.Item>
+                                                                </Col>
+                                                                <Col xs={24} md={3}>
+                                                                    <Form.Item {...field} name={[field.name, "id"]} label="ID">
+                                                                        <Input placeholder="canvas" />
+                                                                    </Form.Item>
+                                                                </Col>
+                                                                <Col xs={24} md={2}>
+                                                                    <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
+                                                                </Col>
+                                                            </Row>
+                                                        ))}
+                                                    </Flex>
+                                                )}
+                                            </Form.List>
+                                        </Card>
+                                    </Col>
+                                    <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "availableModels"]} label="系统可用模型(请先在私有配置里配置渠道)" extra="保存设置时会自动合并所有已启用私有渠道的模型，前台模型下拉会读取这里的公开列表">
                                             <Select mode="multiple" placeholder="请选择系统可用模型" options={channelModels.map((item) => ({ label: item, value: item }))} />
                                         </Form.Item>
@@ -453,8 +577,23 @@ export default function AdminSettingsPage() {
                                             <Switch />
                                         </Form.Item>
                                     </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name={["public", "auth", "emailRegister", "enabled"]} label="开启邮箱注册" extra="关闭后只允许第三方登录创建账号" valuePropName="checked">
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name={["public", "auth", "emailRegister", "emailRequired"]} label="注册时邮箱必填" valuePropName="checked">
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name={["public", "auth", "emailRegister", "codeEnabled"]} label="开启邮箱验证码" extra="开启后注册必须先获取并填写邮箱验证码" valuePropName="checked">
+                                            <Switch />
+                                        </Form.Item>
+                                    </Col>
                                     <Col span={24}>
-                                        <Typography.Title level={5}>模型算力点</Typography.Title>
+                                        <Typography.Title level={5}>模型积分</Typography.Title>
                                         <Table
                                             rowKey="model"
                                             pagination={false}
@@ -499,6 +638,45 @@ export default function AdminSettingsPage() {
                     ) : activeMode === "visual" ? (
                         <Form form={form} layout="vertical" initialValues={emptySettings} requiredMark={false}>
                             <Flex vertical gap={12}>
+                                <Card size="small" title="邮箱验证码">
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "email", "smtpHost"]} label="SMTP Host">
+                                                <Input placeholder="smtp.example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "auth", "email", "smtpPort"]} label="SMTP Port">
+                                                <InputNumber min={1} max={65535} className="!w-full" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "auth", "email", "smtpUsername"]} label="SMTP 用户名">
+                                                <Input />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "auth", "email", "smtpPassword"]} label="SMTP 密码">
+                                                <Input.Password placeholder="留空则沿用已保存的密码" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "email", "fromEmail"]} label="发件邮箱">
+                                                <Input placeholder="no-reply@example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "email", "fromName"]} label="发件人名称">
+                                                <Input placeholder="无限画布" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "auth", "email", "subject"]} label="邮件标题">
+                                                <Input placeholder="邮箱验证码" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
                                 <Card
                                     size="small"
                                     title={
@@ -533,6 +711,88 @@ export default function AdminSettingsPage() {
                                             </Col>
                                         </Row>
                                     </Flex>
+                                </Card>
+                                <Card size="small" title="Google 登录">
+                                    <Flex vertical gap={14}>
+                                        <Typography.Text type="secondary">回调地址是 /api/auth/google/callback，请在 Google OAuth Client 中配置完整站点前缀后的回调 URL。</Typography.Text>
+                                        <Row gutter={16}>
+                                            <Col xs={24} md={6}>
+                                                <Form.Item name={["public", "auth", "google", "enabled"]} label="开启 Google 登录" valuePropName="checked">
+                                                    <Switch />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={9}>
+                                                <Form.Item name={["private", "auth", "google", "clientId"]} label="Google Client ID">
+                                                    <Input placeholder="输入 Google OAuth Client ID" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={9}>
+                                                <Form.Item name={["private", "auth", "google", "clientSecret"]} label="Google Client Secret">
+                                                    <Input.Password placeholder="留空则沿用已保存的密钥" />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </Flex>
+                                </Card>
+                                <Card size="small" title="对象存储">
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "objectStorage", "enabled"]} label="开启对象存储" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "objectStorage", "provider"]} label="供应商">
+                                                <Select
+                                                    options={[
+                                                        { label: "S3 兼容", value: "s3" },
+                                                        { label: "阿里云 OSS", value: "oss" },
+                                                        { label: "腾讯云 COS", value: "cos" },
+                                                    ]}
+                                                />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "objectStorage", "region"]} label="Region">
+                                                <Input placeholder="例如 ap-southeast-1" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={6}>
+                                            <Form.Item name={["private", "objectStorage", "bucket"]} label="Bucket">
+                                                <Input placeholder="Bucket 名称" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={12}>
+                                            <Form.Item name={["private", "objectStorage", "endpoint"]} label="Endpoint">
+                                                <Input placeholder="https://s3.example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={12}>
+                                            <Form.Item name={["private", "objectStorage", "publicUrl"]} label="公开访问地址">
+                                                <Input placeholder="https://cdn.example.com" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "objectStorage", "accessKeyId"]} label="Access Key ID">
+                                                <Input />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "objectStorage", "secretAccessKey"]} label="Secret Access Key">
+                                                <Input.Password placeholder="留空则沿用已保存的密钥" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "objectStorage", "prefix"]} label="路径前缀">
+                                                <Input placeholder="uploads" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={4}>
+                                            <Form.Item name={["private", "objectStorage", "forcePathStyle"]} label="Path Style" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
                                 </Card>
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
@@ -840,17 +1100,91 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             availableModels: setting.modelChannel?.availableModels || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),
         },
+        projectBrief: normalizeProjectBriefSetting(setting.projectBrief),
         auth: {
             allowRegister: setting.auth?.allowRegister !== false,
+            emailRegister: {
+                enabled: setting.auth?.emailRegister?.enabled !== false,
+                emailRequired: setting.auth?.emailRegister?.emailRequired === true,
+                codeEnabled: setting.auth?.emailRegister?.codeEnabled === true,
+            },
             linuxDo: {
                 enabled: setting.auth?.linuxDo?.enabled === true,
             },
+            google: {
+                enabled: setting.auth?.google?.enabled === true,
+            },
         },
+        objectStorage: {
+            enabled: setting.objectStorage?.enabled === true,
+            provider: setting.objectStorage?.provider || "s3",
+            bucket: setting.objectStorage?.bucket || "",
+            region: setting.objectStorage?.region || "",
+            publicUrl: setting.objectStorage?.publicUrl || "",
+        },
+        site: normalizeSiteSetting(setting.site),
+    };
+}
+
+function normalizeSiteSetting(setting: Partial<AdminSettings["public"]["site"]> = {}): AdminSettings["public"]["site"] {
+    const navigation = setting.navigation === undefined ? emptySettings.public.site.navigation : setting.navigation;
+    return {
+        logoUrl: setting.logoUrl?.trim() || "/logo.svg",
+        name: setting.name?.trim() || "无限画布",
+        slogan: setting.slogan?.trim() || "",
+        navigation: (navigation || [])
+            .map((item, index) => ({
+                id: item.id?.trim() || `nav-${index + 1}`,
+                label: item.label?.trim() || "",
+                path: normalizeNavPath(item.path || ""),
+                enabled: item.enabled === true,
+                sort: Math.max(0, Number(item.sort) || 0),
+            }))
+            .filter((item) => item.label && item.path)
+            .sort((a, b) => a.sort - b.sort),
+    };
+}
+
+function normalizeNavPath(path: string) {
+    const value = path.trim();
+    if (!value) return "";
+    if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/")) return value;
+    return `/${value}`;
+}
+
+function normalizeProjectBriefSetting(setting: Partial<AdminSettings["public"]["projectBrief"]> = {}): AdminSettings["public"]["projectBrief"] {
+    return {
+        genres: uniqueModels(setting.genres ? setting.genres : emptySettings.public.projectBrief.genres),
+        styleCategories: uniqueModels(setting.styleCategories ? setting.styleCategories : emptySettings.public.projectBrief.styleCategories),
+        visualStyles: (setting.visualStyles || []).map((item) => ({
+            category: item.category?.trim() || "",
+            name: item.name?.trim() || "",
+            prompt: item.prompt?.trim() || "",
+            coverUrl: item.coverUrl?.trim() || "",
+            previewUrls: item.previewUrls || [],
+        })).filter((item) => item.name),
+        storyPresets: (setting.storyPresets || []).map((item) => ({ title: item.title?.trim() || "", text: item.text?.trim() || "" })).filter((item) => item.title && item.text),
     };
 }
 
 function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChannel"]["modelCosts"][number]>[]) {
-    return items.filter((item) => item.model).map((item) => ({ model: item.model || "", credits: Math.max(0, Number(item.credits) || 0) }));
+    return items
+        .filter((item) => item.model)
+        .map((item) => ({
+            model: item.model || "",
+            upstreamModel: item.upstreamModel?.trim() || item.model || "",
+            name: item.name?.trim() || item.model || "",
+            type: item.type || inferModelType(item.upstreamModel || item.model || ""),
+            thumbnailUrl: item.thumbnailUrl?.trim() || "",
+            providerName: item.providerName?.trim() || "",
+            providerEndpoint: item.providerEndpoint?.trim() || "",
+            providerDisplayName: item.providerDisplayName?.trim() || "",
+            description: item.description?.trim() || "",
+            tags: uniqueModels(item.tags || []),
+            credits: Math.max(0, Number(item.credits) || 0),
+            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0) })),
+            secondCredits: Math.max(0, Number(item.secondCredits) || 0),
+        }));
 }
 
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
@@ -861,25 +1195,90 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             cron: setting.promptSync?.cron || "*/5 * * * *",
         },
         auth: {
+            email: {
+                smtpHost: setting.auth?.email?.smtpHost || "",
+                smtpPort: Number(setting.auth?.email?.smtpPort) || 587,
+                smtpUsername: setting.auth?.email?.smtpUsername || "",
+                smtpPassword: setting.auth?.email?.smtpPassword || "",
+                fromEmail: setting.auth?.email?.fromEmail || "",
+                fromName: setting.auth?.email?.fromName || "",
+                subject: setting.auth?.email?.subject || "邮箱验证码",
+            },
             linuxDo: {
                 clientId: setting.auth?.linuxDo?.clientId || "",
                 clientSecret: setting.auth?.linuxDo?.clientSecret || "",
             },
+            google: {
+                clientId: setting.auth?.google?.clientId || "",
+                clientSecret: setting.auth?.google?.clientSecret || "",
+            },
+        },
+        objectStorage: {
+            enabled: setting.objectStorage?.enabled === true,
+            provider: setting.objectStorage?.provider || "s3",
+            endpoint: setting.objectStorage?.endpoint || "",
+            region: setting.objectStorage?.region || "",
+            bucket: setting.objectStorage?.bucket || "",
+            accessKeyId: setting.objectStorage?.accessKeyId || "",
+            secretAccessKey: setting.objectStorage?.secretAccessKey || "",
+            publicUrl: setting.objectStorage?.publicUrl || "",
+            prefix: setting.objectStorage?.prefix || "",
+            forcePathStyle: setting.objectStorage?.forcePathStyle === true,
         },
     };
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {
+    const modelItems = normalizeProviderModels(item.modelItems?.length ? item.modelItems : (item.models || []).map((model) => ({ model, selected: true, enabled: true })));
     return {
         protocol: "openai",
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
-        models: item.models || [],
+        models: modelItems.filter((model) => model.selected && model.enabled).map((model) => model.model),
+        modelItems,
         weight: Math.max(1, Number(item.weight) || 1),
         enabled: item.enabled !== false,
         remark: item.remark || "",
     };
+}
+
+function normalizeProviderModels(items: Array<Partial<AdminModelChannel["modelItems"][number]>>) {
+    return uniqueModels(items.map((item) => item.model || "")).map((model) => {
+        const item = items.find((value) => value.model === model) || {};
+        const type = item.type || inferModelType(model);
+        return {
+            model,
+            name: item.name?.trim() || model,
+            type,
+            selected: item.selected === true || item.enabled === true,
+            enabled: item.enabled === true,
+            thumbnailUrl: item.thumbnailUrl?.trim() || "",
+            providerDisplayName: item.providerDisplayName?.trim() || "",
+            description: item.description?.trim() || "",
+            tags: uniqueModels(item.tags || []),
+            credits: Math.max(0, Number(item.credits) || 0),
+            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0) })),
+            secondCredits: Math.max(0, Number(item.secondCredits) || 0),
+            apiRoutes: normalizeModelApiRoutes(type, item.apiRoutes),
+        };
+    });
+}
+
+function normalizeModelApiRoutes(type: "text" | "image" | "video", routes: AdminModelChannel["modelItems"][number]["apiRoutes"] = []) {
+    const defaults = {
+        text: [{ path: "/v1/chat/completions", enabled: true }],
+        image: [{ path: "/v1/images/generations", enabled: true }],
+        video: [{ path: "/v1/videos/generations", enabled: true }],
+    };
+    return (routes.length ? routes : defaults[type]).map((route) => ({ path: route.path.trim(), enabled: route.enabled === true })).filter((route) => route.path);
+}
+
+function inferModelType(model: string): "text" | "image" | "video" {
+    const value = model.toLowerCase();
+    if (["video", "sora", "veo", "kling", "runway", "grok-imagine-video"].some((key) => value.includes(key))) return "video";
+    if (["image", "dall", "flux", "stable", "midjourney", "gpt-image"].some((key) => value.includes(key))) return "image";
+    return "text";
 }
 
 function modelCostCredits(items: AdminSettings["public"]["modelChannel"]["modelCosts"], model: string) {
@@ -889,15 +1288,15 @@ function modelCostCredits(items: AdminSettings["public"]["modelChannel"]["modelC
 function setModelCost(form: any, setModelCosts: (items: AdminModelCost[]) => void, model: string, credits: number) {
     const current = (form.getFieldValue(["public", "modelChannel", "modelCosts"]) || []) as AdminSettings["public"]["modelChannel"]["modelCosts"];
     const next = current.filter((item) => item.model !== model);
-    next.push({ model, credits: Math.max(0, credits) });
+    next.push({ model, upstreamModel: model, name: model, type: inferModelType(model), thumbnailUrl: "", providerName: "", providerEndpoint: "", providerDisplayName: "", description: "", tags: [], credits: Math.max(0, credits), resolutionCosts: [], secondCredits: 0 });
     form.setFieldValue(["public", "modelChannel", "modelCosts"], next);
     setModelCosts(next);
 }
 
 function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminSettings): AdminSettings {
-    const channels = saved.private.channels.map((item, index) => ({
+    const channels = currentChannels.map((item, index) => ({
         ...item,
-        apiKey: currentChannels[index]?.apiKey || item.apiKey,
+        apiKey: item.apiKey || saved.private.channels[index]?.apiKey || "",
     }));
     return {
         public: saved.public,
@@ -906,14 +1305,39 @@ function mergeChannelApiKeys(currentChannels: AdminModelChannel[], saved: AdminS
 }
 
 function collectChannelModels(channels: AdminModelChannel[]) {
-    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => channel.models || []));
+    return uniqueModels(channels.filter((channel) => channel.enabled).flatMap((channel) => (channel.modelItems?.length ? channel.modelItems.filter((model) => model.selected && model.enabled).map((model) => publicModelId(channel, model)) : channel.models || [])));
+}
+
+function publicModelId(channel: Pick<AdminModelChannel, "name" | "baseUrl">, model: { model: string }) {
+    return [channel.name.trim(), normalizeEndpoint(channel.baseUrl), model.model.trim()].join("||");
+}
+
+function normalizeEndpoint(value: string) {
+    const endpoint = value.trim().replace(/\/+$/, "");
+    try {
+        const url = new URL(endpoint);
+        const marker = "/api/plan/v3";
+        const index = url.pathname.toLowerCase().indexOf(marker);
+        if (index >= 0) {
+            const end = index + marker.length;
+            if (url.pathname.length === end || url.pathname[end] === "/") {
+                url.pathname = url.pathname.slice(0, end);
+                url.search = "";
+                url.hash = "";
+                return url.toString().replace(/\/+$/, "");
+            }
+        }
+    } catch {
+        // Keep the manually entered endpoint when it is not a full URL.
+    }
+    return endpoint;
 }
 
 function collectKnownModels(settings: AdminSettings) {
     return uniqueModels([
         ...(settings.public.modelChannel.availableModels || []),
         ...(settings.public.modelChannel.modelCosts || []).map((item) => item.model),
-        ...settings.private.channels.flatMap((channel) => channel.models || []),
+        ...settings.private.channels.flatMap((channel) => [...(channel.models || []), ...(channel.modelItems || []).map((item) => item.model)]),
     ]);
 }
 
@@ -928,7 +1352,7 @@ function buildModelSelectGroups(sourceModels: string[], existingModels: string[]
 }
 
 function uniqueModels(models: string[]) {
-    return Array.from(new Set(models.filter(Boolean)));
+    return Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
 }
 
 function modelSummary(models: string[]) {

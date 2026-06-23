@@ -1,22 +1,35 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import { Menu, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
-import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { navigationTools } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useConfigStore } from "@/stores/use-config-store";
+
+type RuntimeNavItem = {
+    id: string;
+    label: string;
+    path: string;
+    enabled: boolean;
+    sort: number;
+};
 
 export function AppTopNav() {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const site = useConfigStore((state) => state.publicSettings?.site);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
-    const slug = pathname.split("/").filter(Boolean)[0];
-    const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+    const navItems = resolveNavItems(site?.navigation);
+    const activePath = navItems.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))?.path;
+    const logoUrl = site?.logoUrl || "/logo.svg";
+    const siteName = site?.name || "无限画布";
+    const slogan = site?.slogan || "";
 
     return (
         <>
@@ -24,15 +37,12 @@ export function AppTopNav() {
                 <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
                         <div className="flex min-w-0 items-center">
-                            <Link href="/" className="flex h-full shrink-0 items-center gap-2 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
-                                <span
-                                    className="size-5 shrink-0 bg-current"
-                                    style={{
-                                        mask: "url(/logo.svg) center / contain no-repeat",
-                                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                                    }}
-                                />
-                                <span className="text-base font-medium">无限画布</span>
+                            <Link href="/" className="flex h-full shrink-0 items-center gap-2.5 text-left text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                                <img src={logoUrl} alt="" className="size-6 shrink-0 object-contain" />
+                                <span className="inline-flex min-w-0 items-baseline gap-2 text-left">
+                                    <span className="max-w-32 truncate text-base font-medium">{siteName}</span>
+                                    {slogan ? <span className="max-w-44 truncate text-xs font-normal leading-none text-stone-500 dark:text-stone-400">{slogan}</span> : null}
+                                </span>
                             </Link>
 
                             <button
@@ -46,13 +56,13 @@ export function AppTopNav() {
                             </button>
 
                             <nav className="hide-scrollbar ml-8 hidden h-16 min-w-0 items-center gap-7 overflow-x-auto md:flex">
-                                {navigationTools.map((tool) => {
+                                {navItems.map((tool) => {
                                     const Icon = tool.icon;
-                                    const active = tool.slug === activeToolSlug;
+                                    const active = tool.path === activePath;
                                     return (
                                         <Link
-                                            key={tool.slug}
-                                            href={`/${tool.slug}`}
+                                            key={tool.id}
+                                            href={tool.path}
                                             className={cn(
                                                 "relative flex h-16 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
                                                 active
@@ -75,8 +85,27 @@ export function AppTopNav() {
                 </header>
             ) : null}
 
-            <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
+            <MobileNavDrawer open={mobileNavOpen} activePath={activePath} navItems={navItems} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
         </>
     );
+}
+
+function resolveNavItems(items?: RuntimeNavItem[]): Array<{ id: string; label: string; path: string; icon: LucideIcon }> {
+    const fallback = navigationTools.map((item, index) => ({ ...item, id: item.slug, path: `/${item.slug}`, enabled: true, sort: (index + 1) * 10 }));
+    const source = items === undefined ? fallback : items;
+    return source
+        .filter((item) => item.enabled && item.label && item.path)
+        .sort((a, b) => a.sort - b.sort)
+        .map((item) => {
+            const path = normalizePath(item.path);
+            const slug = path.split("/").filter(Boolean)[0];
+            const matched = navigationTools.find((tool) => tool.slug === slug);
+            return { id: item.id || path, label: item.label, path, icon: matched?.icon || Menu };
+        });
+}
+
+function normalizePath(path: string) {
+    if (path.startsWith("/") || path.startsWith("http://") || path.startsWith("https://")) return path;
+    return `/${path}`;
 }

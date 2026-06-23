@@ -15,11 +15,113 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
+    Agent = "agent",
+    ScriptAgent = "scriptAgent",
+    CharacterAgent = "characterAgent",
+    StoryboardAgent = "storyboardAgent",
+    ProjectBrief = "projectBrief",
+    SubjectBoard = "subjectBoard",
+    Storyboard = "storyboard",
 }
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+export type CanvasVideoRefMode = "text" | "first" | "firstLast" | "omni";
+export type CanvasTextMode = "write" | "imagePrompt" | "videoPrompt";
+export type CanvasAgentOutputFormat = "plain" | "markdown" | "json" | "promptList";
+export type CanvasAgentTaskStatus = "idle" | "running" | "success" | "error";
+export type CanvasSubjectKind = "character" | "scene" | "prop";
+export type CanvasMediaSlotStatus = "empty" | "generating" | "done" | "error";
+export type CanvasStoryboardGenerationMode = "image" | "video";
+
+export type CanvasProjectBrief = {
+    theme: string;
+    genre: string;
+    visualStyle: string;
+    visualStyleImage?: string;
+    visualStylePrompt?: string;
+    keyElements: string[];
+    duration: string;
+    story: string;
+};
+
+export type CanvasMediaSlot = {
+    status: CanvasMediaSlotStatus;
+    url?: string;
+    nodeId?: string;
+    error?: string;
+};
+
+export type CanvasSubjectBoardItem = {
+    id: string;
+    kind: CanvasSubjectKind;
+    name: string;
+    description?: string;
+    prompt?: string;
+    thumbnail?: string;
+    image?: CanvasMediaSlot;
+    imageHistory?: CanvasMediaSlot[];
+    video?: CanvasMediaSlot;
+    videoHistory?: CanvasMediaSlot[];
+    voice?: CanvasMediaSlot;
+};
+
+export type CanvasSubjectBoardGroup = {
+    id: string;
+    title: string;
+    kind: CanvasSubjectKind;
+    items: CanvasSubjectBoardItem[];
+};
+
+export type CanvasSubjectBoard = {
+    groups: CanvasSubjectBoardGroup[];
+};
+
+export type CanvasAgentTask = {
+    id: string;
+    title: string;
+    status: CanvasAgentTaskStatus;
+};
+
+export type CanvasStoryboardReference = {
+    id: string;
+    name: string;
+    kind: CanvasSubjectKind;
+    thumbnail?: string;
+    nodeId?: string;
+};
+
+export type CanvasStoryboardShot = {
+    id: string;
+    description: string;
+    references: CanvasStoryboardReference[];
+    image?: CanvasMediaSlot;
+    imageHistory?: CanvasMediaSlot[];
+    video?: CanvasMediaSlot;
+    videoHistory?: CanvasMediaSlot[];
+    imagePrompt?: string;
+    videoPrompt?: string;
+};
+
+export type CanvasStoryboard = {
+    shots: CanvasStoryboardShot[];
+};
+
+export type CanvasBoardMediaEditorTarget =
+    | {
+          boardType: "subject";
+          nodeId: string;
+          groupId: string;
+          itemId: string;
+          kind: "image" | "video";
+      }
+    | {
+          boardType: "storyboard";
+          nodeId: string;
+          shotId: string;
+          kind: "image" | "video";
+      };
 
 export type CanvasNodeMetadata = {
     content?: string;
@@ -43,6 +145,8 @@ export type CanvasNodeMetadata = {
     audioSpeed?: string;
     audioInstructions?: string;
     references?: string[];
+    videoRefMode?: CanvasVideoRefMode;
+    videoReferences?: string[];
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
@@ -56,6 +160,32 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    textMode?: CanvasTextMode;
+    textExpanded?: boolean;
+    textStyle?: "body" | "h1" | "h2" | "h3";
+    textBold?: boolean;
+    textItalic?: boolean;
+    textBackground?: string;
+    agentName?: string;
+    agentInstruction?: string;
+    agentOutputFormat?: CanvasAgentOutputFormat;
+    agentResultNodeId?: string;
+    agentResultSourceNodeId?: string;
+    agentTasks?: CanvasAgentTask[];
+    agentProgress?: number;
+    agentCurrentStep?: string;
+    projectBrief?: CanvasProjectBrief;
+    subjectBoard?: CanvasSubjectBoard;
+    subjectPanelGroupId?: string;
+    subjectPanelItemId?: string;
+    storyboard?: CanvasStoryboard;
+    storyboardPanelMode?: CanvasStoryboardGenerationMode;
+    storyboardPanelShotId?: string;
+    storyboardSourceNodeId?: string;
+    storyboardShotId?: string;
+    storyboardResultKind?: CanvasStoryboardGenerationMode;
+    storyboardImageModel?: string;
+    storyboardVideoModel?: string;
 };
 
 export type CanvasNodeData = {
@@ -67,6 +197,20 @@ export type CanvasNodeData = {
     height: number;
     metadata?: CanvasNodeMetadata;
 };
+
+export type CanvasGroup = {
+    id: string;
+    title: string;
+    nodeIds: string[];
+    position: Position;
+    width: number;
+    height: number;
+    color?: string;
+    collapsed?: boolean;
+    locked?: boolean;
+};
+
+export type CanvasArrangeMode = "grid" | "horizontal" | "vertical";
 
 export type CanvasConnection = {
     id: string;

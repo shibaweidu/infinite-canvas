@@ -58,9 +58,9 @@ cp .env.example .env
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-运行后默认端口3000，可访问 `http://localhost:3000`。
+运行后默认端口3002，可访问 `http://localhost:3002`。
 
-如需要拉取提示词，可前往:`http://localhost:3000/admin/prompts`
+如需要拉取提示词，可前往:`http://localhost:3002/admin/prompts`
 
 ## New API 自动配置
 
