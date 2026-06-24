@@ -131,7 +131,7 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
 
     return (
         <div className={`relative flex h-full w-full flex-col overflow-hidden ${fullscreen ? "px-6 pb-6 pt-6" : "px-4 pb-4 pt-12"}`} style={{ color: theme.node.text }}>
-            <div className="thin-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" onWheel={(event) => event.stopPropagation()}>
+            <div className={`thin-scrollbar min-h-0 flex-1 flex-col gap-3 pr-1 ${fullscreen ? "flex overflow-hidden" : "flex overflow-y-auto"}`} onWheel={(event) => event.stopPropagation()}>
                 <FieldLabel theme={theme} label="主题" />
                 <input
                     className="h-9 w-full rounded-lg border bg-transparent px-3 text-sm outline-none"
@@ -191,7 +191,7 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
                     ) : null}
                 </div>
 
-                <div className="relative">
+                <div className={`relative ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                         <FieldLabel theme={theme} label="故事简述（支持小说改编）" compact />
                         <div className="flex items-center gap-1.5">
@@ -227,7 +227,7 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
                         </div>
                     ) : null}
                     <textarea
-                        className={`thin-scrollbar w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm leading-5 outline-none ${fullscreen ? "h-[260px] max-h-[34vh]" : "h-28"}`}
+                        className={`thin-scrollbar w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm leading-5 outline-none ${fullscreen ? "min-h-0 flex-1" : "h-[21rem]"}`}
                         style={{ borderColor: theme.node.stroke, color: theme.node.text }}
                         value={brief.story}
                         placeholder="简要描述你想要创作的故事"
@@ -254,7 +254,7 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
                     setStyleOpen(false);
                 }}
             />
-            <CanvasFullscreenTextEditor open={storyEditorOpen} title="故事简述" value={brief.story} placeholder="简要描述你想要创作的故事" theme={theme} compact onChange={(story) => updateBrief({ story })} onClose={() => setStoryEditorOpen(false)} />
+            <CanvasFullscreenTextEditor open={storyEditorOpen} title="故事简述" value={brief.story} placeholder="简要描述你想要创作的故事" theme={theme} onChange={(story) => updateBrief({ story })} onClose={() => setStoryEditorOpen(false)} />
         </div>
     );
 }

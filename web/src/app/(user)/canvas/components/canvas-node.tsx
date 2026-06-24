@@ -57,6 +57,8 @@ type CanvasNodeProps = {
     onTextModeSelect?: (node: CanvasNodeData, mode: CanvasTextMode) => void;
     onToggleTextExpanded?: (node: CanvasNodeData) => void;
     onSendNode?: (node: CanvasNodeData) => void;
+    shortDramaNextLabel?: string;
+    onShortDramaNext?: (node: CanvasNodeData) => void;
     onOpenBoardMediaEditor?: (target: CanvasBoardMediaEditorTarget) => void;
     onOpenFullscreen?: (node: CanvasNodeData) => void;
     onContextMenu: (event: React.MouseEvent, nodeId: string) => void;
@@ -129,6 +131,8 @@ export const CanvasNode = React.memo(function CanvasNode({
     onTextModeSelect,
     onToggleTextExpanded,
     onSendNode,
+    shortDramaNextLabel,
+    onShortDramaNext,
     onOpenBoardMediaEditor,
     onOpenFullscreen,
     onContextMenu,
@@ -147,6 +151,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const canRenderExternalPanel = data.type !== CanvasNodeType.Config && data.type !== CanvasNodeType.ProjectBrief;
     const shouldRenderExternalPanel = data.type === CanvasNodeType.Storyboard ? hasStoryboardPanel : data.type === CanvasNodeType.SubjectBoard ? hasSubjectPanel : showPanel;
     const canOpenFullscreen = data.type === CanvasNodeType.Text || data.type === CanvasNodeType.ProjectBrief || data.type === CanvasNodeType.SubjectBoard || data.type === CanvasNodeType.Storyboard;
+    const safeScale = Math.max(scale, 0.05);
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const resizeRef = useRef({
@@ -329,6 +334,32 @@ export const CanvasNode = React.memo(function CanvasNode({
                 }}
             >
                 <NodeTitleBar node={data} scale={scale} theme={theme} onRename={onRename} />
+                {shortDramaNextLabel ? (
+                    <button
+                        type="button"
+                        className="absolute z-30 inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold opacity-90 backdrop-blur-md transition hover:opacity-100"
+                        style={{
+                            top: `${-38 / safeScale}px`,
+                            right: `${16 / safeScale}px`,
+                            transform: `scale(${1 / safeScale})`,
+                            transformOrigin: "right top",
+                            background: `${theme.toolbar.panel}dd`,
+                            borderColor: theme.node.stroke,
+                            color: theme.node.text,
+                        }}
+                        title={shortDramaNextLabel}
+                        aria-label={shortDramaNextLabel}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onShortDramaNext?.(data);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                    >
+                        <span>{shortDramaNextLabel}</span>
+                        <ChevronRight className="size-3.5" />
+                    </button>
+                ) : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
@@ -558,7 +589,8 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
     const hasContent = Boolean(content.trim());
     const isExpanded = Boolean(node.metadata?.textExpanded);
     const textMode = node.metadata?.textMode;
-    const [isWritingInline, setIsWritingInline] = useState(textMode === "write" && !hasContent);
+    const isScriptText = node.metadata?.textRole === "script";
+    const [isWritingInline, setIsWritingInline] = useState(textMode === "write" && !hasContent && !isScriptText);
     const textSurfaceStyle: React.CSSProperties = {
         fontSize: `${node.metadata?.fontSize || 14}px`,
         color: theme.node.text,
@@ -568,8 +600,12 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
     };
 
     useEffect(() => {
+        if (isScriptText) {
+            setIsWritingInline(false);
+            return;
+        }
         if (textMode === "write" && !hasContent) setIsWritingInline(true);
-    }, [hasContent, textMode]);
+    }, [hasContent, isScriptText, textMode]);
 
     return (
         <div className="flex h-full w-full flex-col overflow-hidden pt-8">
@@ -611,7 +647,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 />
             ) : (
                 <>
-                    {textMode === "write" && !isLoading && (!hasContent || isWritingInline) ? (
+                    {textMode === "write" && !isLoading && !isScriptText && (!hasContent || isWritingInline) ? (
                         <textarea
                             autoFocus
                             className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-[18px] border-none bg-transparent px-4 pb-4 pt-1 font-mono leading-relaxed outline-none appearance-none select-text"
@@ -633,6 +669,10 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                             onWheel={(event) => event.stopPropagation()}
                         >
                             {content || <span style={{ color: theme.node.placeholder }}>正在等待模型输出...</span>}
+                        </div>
+                    ) : textMode === "write" && isScriptText && !hasContent ? (
+                        <div className="pointer-events-none flex h-full w-full items-center justify-center px-6 text-center text-sm font-medium" style={{ color: theme.node.placeholder }}>
+                            双击编辑剧本内容
                         </div>
                     ) : textMode === "imagePrompt" || textMode === "videoPrompt" ? (
                         <TextModeBadge mode={textMode} theme={theme} />
@@ -813,9 +853,6 @@ function AgentNodeContent({ node, theme }: NodeContentRendererProps) {
                 <div className="min-w-0">
                     <div className="truncate text-sm font-semibold" style={{ color: theme.node.text }}>
                         {node.metadata?.agentName || node.title || "智能体"}
-                    </div>
-                    <div className="truncate text-[11px]" style={{ color: theme.node.muted }}>
-                        {node.metadata?.model || "多模态问答"}
                     </div>
                 </div>
                 {node.metadata?.status === "loading" ? <span className="ml-auto size-4 shrink-0 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} /> : null}

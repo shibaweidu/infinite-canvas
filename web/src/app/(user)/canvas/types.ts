@@ -161,6 +161,7 @@ export type CanvasNodeMetadata = {
     bytes?: number;
     durationMs?: number;
     textMode?: CanvasTextMode;
+    textRole?: "script";
     textExpanded?: boolean;
     textStyle?: "body" | "h1" | "h2" | "h3";
     textBold?: boolean;

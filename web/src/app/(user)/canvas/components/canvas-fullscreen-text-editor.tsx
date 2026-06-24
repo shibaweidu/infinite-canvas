@@ -20,12 +20,11 @@ type CanvasFullscreenTextEditorProps = {
     value: string;
     placeholder?: string;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-    compact?: boolean;
     onChange: (value: string) => void;
     onClose: () => void;
 };
 
-export function CanvasFullscreenTextEditor({ open, title, value, placeholder, theme, compact, onChange, onClose }: CanvasFullscreenTextEditorProps) {
+export function CanvasFullscreenTextEditor({ open, title, value, placeholder, theme, onChange, onClose }: CanvasFullscreenTextEditorProps) {
     const [format, setFormat] = useState<CanvasFullscreenTextFormat>({ textStyle: "body", fontSize: 16 });
 
     useEffect(() => {
@@ -47,7 +46,7 @@ export function CanvasFullscreenTextEditor({ open, title, value, placeholder, th
                     <CanvasFullscreenTextToolbar format={format} theme={theme} onFormatChange={(patch) => setFormat((current) => ({ ...current, ...patch }))} />
                     <textarea
                         autoFocus
-                        className={`thin-scrollbar resize-none rounded-xl border bg-transparent p-6 leading-7 outline-none ${compact ? "min-h-[220px] max-h-[420px]" : "min-h-0 flex-1"}`}
+                        className="thin-scrollbar min-h-0 flex-1 resize-none rounded-xl border bg-transparent p-6 leading-7 outline-none"
                         style={{ ...canvasFullscreenTextStyle(format, theme), borderColor: theme.toolbar.border }}
                         value={value}
                         placeholder={placeholder}

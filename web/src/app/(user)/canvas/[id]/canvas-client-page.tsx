@@ -43,7 +43,7 @@ import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode, type CanvasPromptSelectOption, type CanvasStoryboardShotOption } from "../components/canvas-node-prompt-panel";
 import { CanvasFullscreenTextToolbar, canvasFullscreenTextStyle } from "../components/canvas-fullscreen-text-editor";
 import { ProjectBriefNodeContent } from "../components/canvas-project-brief-node";
-import { CanvasShortDramaNav } from "../components/canvas-short-drama-nav";
+import { CanvasShortDramaNav, type ShortDramaStepType } from "../components/canvas-short-drama-nav";
 import { CanvasToolbar } from "../components/canvas-toolbar";
 import { AssetPickerModal, type AssetPickerTab, type InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
@@ -150,22 +150,37 @@ function createCanvasNode(type: CanvasNodeType, position: Position, metadata?: C
     };
 }
 
+function createScriptTextNode(position: Position, nodes: CanvasNodeData[], metadata?: CanvasNodeMetadata): CanvasNodeData {
+    const node = createCanvasNode(CanvasNodeType.Text, position, { textRole: "script", textMode: "write", ...metadata });
+    const nextIndex =
+        nodes.reduce((max, item) => {
+            if (item.type !== CanvasNodeType.Text || item.metadata?.textRole !== "script") return max;
+            const match = (item.title || "").trim().match(/^剧本(\d+)$/);
+            return match ? Math.max(max, Number(match[1]) + 1) : max;
+        }, 1) || 1;
+    return { ...node, title: `剧本${nextIndex}` };
+}
+
 function normalizeCanvasNodeTitles(nodes: CanvasNodeData[]) {
-    const nextIndex = new Map<CanvasNodeType, number>();
-    const escapedBase = (type: CanvasNodeType) => nodeTitleBase(type).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const nextIndex = new Map<string, number>();
+    const titleKey = (node: CanvasNodeData) => (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script" ? "script" : node.type);
+    const titleBase = (node: CanvasNodeData) => (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script" ? "剧本" : nodeTitleBase(node.type));
     nodes.forEach((node) => {
-        const match = (node.title || "").trim().match(new RegExp(`^${escapedBase(node.type)}(\\d+)$`));
-        if (match) nextIndex.set(node.type, Math.max(nextIndex.get(node.type) || 1, Number(match[1]) + 1));
+        const escapedBase = titleBase(node).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = (node.title || "").trim().match(new RegExp(`^${escapedBase}(\\d+)$`));
+        const key = titleKey(node);
+        if (match) nextIndex.set(key, Math.max(nextIndex.get(key) || 1, Number(match[1]) + 1));
     });
 
     let changed = false;
     const next = nodes.map((node) => {
         const title = (node.title || "").trim();
-        const base = nodeTitleBase(node.type);
+        const base = titleBase(node);
+        const key = titleKey(node);
         const needsAutoTitle = !title || title === base || LEGACY_DEFAULT_NODE_TITLES[node.type].includes(title);
         if (!needsAutoTitle) return node;
-        const index = nextIndex.get(node.type) || 1;
-        nextIndex.set(node.type, index + 1);
+        const index = nextIndex.get(key) || 1;
+        nextIndex.set(key, index + 1);
         changed = true;
         return { ...node, title: `${base}${index}` };
     });
@@ -178,6 +193,44 @@ function nodeTitleBase(type: CanvasNodeType) {
 
 function isAgentNodeType(type: CanvasNodeType) {
     return type === CanvasNodeType.Agent || type === CanvasNodeType.ScriptAgent || type === CanvasNodeType.CharacterAgent || type === CanvasNodeType.StoryboardAgent;
+}
+
+const SHORT_DRAMA_NODE_TYPES = new Set<CanvasNodeType>([CanvasNodeType.ProjectBrief, CanvasNodeType.ScriptAgent, CanvasNodeType.CharacterAgent, CanvasNodeType.SubjectBoard, CanvasNodeType.StoryboardAgent, CanvasNodeType.Storyboard]);
+
+const SHORT_DRAMA_CONNECTIONS: Record<ShortDramaStepType, ShortDramaStepType[]> = {
+    [CanvasNodeType.ProjectBrief]: [CanvasNodeType.ScriptAgent, CanvasNodeType.CharacterAgent, CanvasNodeType.StoryboardAgent],
+    [CanvasNodeType.ScriptAgent]: ["script"],
+    script: [CanvasNodeType.CharacterAgent, CanvasNodeType.StoryboardAgent],
+    [CanvasNodeType.CharacterAgent]: [CanvasNodeType.SubjectBoard],
+    [CanvasNodeType.SubjectBoard]: [CanvasNodeType.StoryboardAgent, CanvasNodeType.Storyboard],
+    [CanvasNodeType.StoryboardAgent]: [CanvasNodeType.Storyboard],
+    [CanvasNodeType.Storyboard]: [],
+};
+
+function getShortDramaStepType(node: CanvasNodeData | null | undefined): ShortDramaStepType | null {
+    if (!node) return null;
+    if (node.type === CanvasNodeType.Text) return node.metadata?.textRole === "script" ? "script" : null;
+    return SHORT_DRAMA_NODE_TYPES.has(node.type) && node.type !== CanvasNodeType.Text ? (node.type as ShortDramaStepType) : null;
+}
+
+function getNextShortDramaNodeTypes(type: ShortDramaStepType) {
+    return SHORT_DRAMA_CONNECTIONS[type] || [];
+}
+
+function isAllowedShortDramaConnection(fromType: ShortDramaStepType | null, toType: ShortDramaStepType | null) {
+    if (!fromType || !toType) return true;
+    return getNextShortDramaNodeTypes(fromType).includes(toType);
+}
+
+function shortDramaConnectionWarning(fromType?: ShortDramaStepType | null) {
+    if (fromType === CanvasNodeType.ProjectBrief) return "故事设定建议连接到剧本 Agent、角色 Agent 或分镜 Agent";
+    if (fromType === CanvasNodeType.ScriptAgent) return "剧本 Agent 需要连接到剧本";
+    if (fromType === "script") return "剧本建议连接到角色 Agent 或分镜 Agent";
+    if (fromType === CanvasNodeType.CharacterAgent) return "角色 Agent 需要连接到角色板";
+    if (fromType === CanvasNodeType.SubjectBoard) return "角色板建议连接到分镜 Agent 或分镜板";
+    if (fromType === CanvasNodeType.StoryboardAgent) return "分镜 Agent 需要连接到分镜板";
+    if (fromType === CanvasNodeType.Storyboard) return "分镜板已经是短剧流程末端";
+    return "短剧制作节点请按流程顺序连接";
 }
 
 function isAgentNode(node: CanvasNodeData | undefined) {
@@ -459,6 +512,27 @@ function findDirectTextTarget(nodeId: string, nodes: CanvasNodeData[], connectio
         .filter((connection) => connection.fromNodeId === nodeId)
         .map((connection) => nodes.find((node) => node.id === connection.toNodeId))
         .find((node) => node?.type === CanvasNodeType.Text)?.id;
+}
+
+function findUpstreamScriptNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const queue = connections.filter((connection) => connection.toNodeId === nodeId).map((connection) => connection.fromNodeId);
+    const visited = new Set<string>();
+    while (queue.length) {
+        const id = queue.shift()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const node = nodes.find((item) => item.id === id);
+        if (node?.type === CanvasNodeType.Text && node.metadata?.textRole === "script") return node;
+        connections.filter((connection) => connection.toNodeId === id).forEach((connection) => queue.push(connection.fromNodeId));
+    }
+    return null;
+}
+
+function shortDramaNextLabel(node: CanvasNodeData) {
+    if (node.type === CanvasNodeType.ProjectBrief) return "下一步：生成剧本";
+    if (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script") return "下一步：生成角色";
+    if (node.type === CanvasNodeType.SubjectBoard) return "下一步：生成分镜";
+    return undefined;
 }
 
 export default function CanvasPage() {
@@ -889,7 +963,10 @@ function InfiniteCanvasPage() {
 
             const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType);
             if (!connection) {
-                message.warning("配置节点之间不能连接");
+                const first = nodesRef.current.find((node) => node.id === current.nodeId);
+                const second = nodesRef.current.find((node) => node.id === targetNodeId);
+                const from = current.handleType === "target" ? second : first;
+                message.warning(getShortDramaStepType(first) && getShortDramaStepType(second) ? shortDramaConnectionWarning(getShortDramaStepType(from)) : "配置节点之间不能连接");
                 return;
             }
             const { fromNodeId, toNodeId } = connection;
@@ -913,7 +990,9 @@ function InfiniteCanvasPage() {
             const newNode = createCanvasNode(type, pending.position, metadata);
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
-                message.warning("配置节点之间不能连接");
+                const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
+                const from = pending.connection.handleType === "target" ? newNode : sourceNode;
+                message.warning(getShortDramaStepType(sourceNode) && getShortDramaStepType(newNode) ? shortDramaConnectionWarning(getShortDramaStepType(from)) : "配置节点之间不能连接");
                 return;
             }
             setNodes((prev) => [...prev, newNode]);
@@ -1196,6 +1275,153 @@ function InfiniteCanvasPage() {
             if (type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.textModel, getCanvasCenter],
+    );
+
+    const activeShortDramaNode = selectedNodeIds.size === 1 ? nodeById.get(Array.from(selectedNodeIds)[0]) || null : null;
+    const activeShortDramaStepType = getShortDramaStepType(activeShortDramaNode);
+    const activeShortDramaNextTypes = activeShortDramaStepType ? getNextShortDramaNodeTypes(activeShortDramaStepType) : [];
+
+    const createShortDramaNode = useCallback(
+        (type: ShortDramaStepType, position: Position) => {
+            const metadata = type !== "script" && isAgentNodeType(type) ? { model: effectiveConfig.textModel || effectiveConfig.model } : undefined;
+            if (type === "script") return createScriptTextNode(position, nodesRef.current, metadata);
+            return createCanvasNode(type, position, metadata);
+        },
+        [effectiveConfig.model, effectiveConfig.textModel],
+    );
+
+    const createShortDramaStep = useCallback(
+        (type: ShortDramaStepType) => {
+            const selectedIds = selectedNodeIdsRef.current;
+            const sourceNode = selectedIds.size === 1 ? nodesRef.current.find((node) => selectedIds.has(node.id)) || null : null;
+            const sourceStepType = getShortDramaStepType(sourceNode);
+            if (sourceNode && sourceStepType) {
+                if (sourceStepType === type || !isAllowedShortDramaConnection(sourceStepType, type)) {
+                    message.warning(shortDramaConnectionWarning(sourceStepType));
+                    return;
+                }
+                const spec = getNodeSpec(type === "script" ? CanvasNodeType.Text : type);
+                const position = {
+                    x: sourceNode.position.x + sourceNode.width + 120 + spec.width / 2,
+                    y: sourceNode.position.y + sourceNode.height / 2,
+                };
+                const newNode = createShortDramaNode(type, position);
+                const connection = normalizeConnection(sourceNode.id, newNode.id, [...nodesRef.current, newNode], "source");
+                if (!connection) {
+                    message.warning(shortDramaConnectionWarning(sourceStepType));
+                    return;
+                }
+                setNodes((prev) => [...prev, newNode]);
+                setConnections((prev) => (prev.some((conn) => conn.fromNodeId === connection.fromNodeId && conn.toNodeId === connection.toNodeId) ? prev : [...prev, { id: nanoid(), ...connection }]));
+                setSelectedNodeIds(new Set([newNode.id]));
+                setSelectedConnectionId(null);
+                setDialogNodeId(newNode.id);
+                return;
+            }
+            if (type === "script") {
+                const newNode = createScriptTextNode(getCanvasCenter(), nodesRef.current);
+                setNodes((prev) => [...prev, newNode]);
+                setSelectedNodeIds(new Set([newNode.id]));
+                setSelectedConnectionId(null);
+                setDialogNodeId(newNode.id);
+                return;
+            }
+            createNode(type);
+        },
+        [createNode, createShortDramaNode, getCanvasCenter, message],
+    );
+
+    const createShortDramaFlow = useCallback(() => {
+        const flowTypes: ShortDramaStepType[] = [CanvasNodeType.ProjectBrief, CanvasNodeType.ScriptAgent, "script", CanvasNodeType.CharacterAgent, CanvasNodeType.SubjectBoard, CanvasNodeType.StoryboardAgent, CanvasNodeType.Storyboard];
+        const center = getCanvasCenter();
+        let left = center.x - NODE_DEFAULT_SIZE[CanvasNodeType.ProjectBrief].width / 2;
+        const newNodes = flowTypes.map((type) => {
+            const spec = getNodeSpec(type === "script" ? CanvasNodeType.Text : type);
+            const node = createShortDramaNode(type, { x: left + spec.width / 2, y: center.y });
+            left += spec.width + 120;
+            return node;
+        });
+        const nextConnections: CanvasConnection[] = [];
+        for (let index = 0; index < newNodes.length - 1; index += 1) {
+            const connection = normalizeConnection(newNodes[index].id, newNodes[index + 1].id, newNodes, "source");
+            if (connection) nextConnections.push({ id: nanoid(), ...connection });
+        }
+        const scriptNode = newNodes.find((node) => node.type === CanvasNodeType.Text && node.metadata?.textRole === "script");
+        const storyboardAgentNode = newNodes.find((node) => node.type === CanvasNodeType.StoryboardAgent);
+        if (scriptNode && storyboardAgentNode) {
+            const connection = normalizeConnection(scriptNode.id, storyboardAgentNode.id, newNodes, "source");
+            if (connection) nextConnections.push({ id: nanoid(), ...connection });
+        }
+        setNodes((prev) => [...prev, ...newNodes]);
+        setConnections((prev) => [...prev, ...nextConnections]);
+        setSelectedNodeIds(new Set([newNodes[0].id]));
+        setSelectedConnectionId(null);
+        setDialogNodeId(newNodes[0].id);
+    }, [createShortDramaNode, getCanvasCenter]);
+
+    const createShortDramaNextFromNode = useCallback(
+        (sourceNode: CanvasNodeData) => {
+            const sourceCenterY = sourceNode.position.y + sourceNode.height / 2;
+            const nextNodes: CanvasNodeData[] = [];
+            const nextConnections: CanvasConnection[] = [];
+            let focusNodeId: string | null = null;
+            let left = sourceNode.position.x + sourceNode.width + 120;
+
+            const createAtRight = (type: ShortDramaStepType) => {
+                const spec = getNodeSpec(type === "script" ? CanvasNodeType.Text : type);
+                const node = createShortDramaNode(type, { x: left + spec.width / 2, y: sourceCenterY });
+                nextNodes.push(node);
+                left += spec.width + 120;
+                return node;
+            };
+
+            const addConnection = (fromNodeId: string, toNodeId: string) => {
+                const connection = normalizeConnection(fromNodeId, toNodeId, [...nodesRef.current, ...nextNodes], "source");
+                if (connection) nextConnections.push({ id: nanoid(), ...connection });
+            };
+
+            if (sourceNode.type === CanvasNodeType.ProjectBrief) {
+                const agentNode = createAtRight(CanvasNodeType.ScriptAgent);
+                const scriptNode = createAtRight("script");
+                addConnection(sourceNode.id, agentNode.id);
+                addConnection(agentNode.id, scriptNode.id);
+                focusNodeId = agentNode.id;
+            } else if (sourceNode.type === CanvasNodeType.Text && sourceNode.metadata?.textRole === "script") {
+                const agentNode = createAtRight(CanvasNodeType.CharacterAgent);
+                const boardNode = createAtRight(CanvasNodeType.SubjectBoard);
+                addConnection(sourceNode.id, agentNode.id);
+                addConnection(agentNode.id, boardNode.id);
+                focusNodeId = agentNode.id;
+            } else if (sourceNode.type === CanvasNodeType.SubjectBoard) {
+                const agentNode = createAtRight(CanvasNodeType.StoryboardAgent);
+                const storyboardNode = createAtRight(CanvasNodeType.Storyboard);
+                addConnection(sourceNode.id, agentNode.id);
+                const scriptNode = findUpstreamScriptNode(sourceNode.id, nodesRef.current, connectionsRef.current);
+                if (scriptNode) addConnection(scriptNode.id, agentNode.id);
+                else message.warning("未找到上游剧本，分镜 Agent 将只连接角色板。");
+                addConnection(agentNode.id, storyboardNode.id);
+                focusNodeId = agentNode.id;
+            }
+
+            if (!nextNodes.length) return;
+            setNodes((prev) => [...prev, ...nextNodes]);
+            setConnections((prev) => {
+                const existing = new Set(prev.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
+                const unique = nextConnections.filter((connection) => {
+                    const key = `${connection.fromNodeId}:${connection.toNodeId}`;
+                    if (existing.has(key)) return false;
+                    existing.add(key);
+                    return true;
+                });
+                return [...prev, ...unique];
+            });
+            if (focusNodeId) {
+                setSelectedNodeIds(new Set([focusNodeId]));
+                setSelectedConnectionId(null);
+                setDialogNodeId(focusNodeId);
+            }
+        },
+        [createShortDramaNode, message],
     );
 
     const deleteNodes = useCallback(
@@ -3972,6 +4198,8 @@ function InfiniteCanvasPage() {
                             onTextModeSelect={selectTextMode}
                             onToggleTextExpanded={toggleTextExpanded}
                             onSendNode={sendNodeToNext}
+                            shortDramaNextLabel={shortDramaNextLabel(node)}
+                            onShortDramaNext={createShortDramaNextFromNode}
                             onOpenBoardMediaEditor={(target) => {
                                 setBoardMediaEditor(target);
                                 setBoardMediaReturnFullscreenNodeId(null);
@@ -4064,7 +4292,7 @@ function InfiniteCanvasPage() {
                     }}
                 />
 
-                <CanvasShortDramaNav onCreateNode={createNode} />
+                <CanvasShortDramaNav activeNode={activeShortDramaStepType ? { stepType: activeShortDramaStepType, title: activeShortDramaNode?.title } : null} recommendedTypes={activeShortDramaNextTypes} onCreateNode={createShortDramaStep} onCreateFlow={createShortDramaFlow} />
 
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
 
@@ -5144,10 +5372,20 @@ function normalizeConnection(firstNodeId: string, secondNodeId: string, nodes: C
     const second = nodes.find((node) => node.id === secondNodeId);
     if (!first || !second || first.id === second.id) return null;
     if (first.type === CanvasNodeType.Config && second.type === CanvasNodeType.Config) return null;
-    if (second.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    if (first.type === CanvasNodeType.Config && firstHandleType === "target") return { fromNodeId: second.id, toNodeId: first.id };
-    if (first.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    return { fromNodeId: first.id, toNodeId: second.id };
+    const connection =
+        second.type === CanvasNodeType.Config
+            ? { fromNodeId: first.id, toNodeId: second.id }
+            : first.type === CanvasNodeType.Config && firstHandleType === "target"
+              ? { fromNodeId: second.id, toNodeId: first.id }
+              : first.type === CanvasNodeType.Config
+                ? { fromNodeId: first.id, toNodeId: second.id }
+                : { fromNodeId: first.id, toNodeId: second.id };
+    const from = nodes.find((node) => node.id === connection.fromNodeId);
+    const to = nodes.find((node) => node.id === connection.toNodeId);
+    const fromStepType = getShortDramaStepType(from);
+    const toStepType = getShortDramaStepType(to);
+    if (fromStepType && toStepType && !isAllowedShortDramaConnection(fromStepType, toStepType)) return null;
+    return connection;
 }
 
 function getInputSummary(inputs: NodeGenerationInput[]) {

@@ -65,6 +65,8 @@ export function CanvasGroupFrame({
     const frameTop = selected ? toolbarWorldHeight + 18 : 22;
     const frameWidth = bounds.width + groupPadding * 2;
     const frameHeight = bounds.height + groupPadding * 2;
+    const title = `${group.title || "分组"} ${nodeCount} 个节点`;
+    const titleWidth = Math.max(112, Math.min(320, title.length * 12 + 28));
 
     useEffect(() => {
         if (!editing) setDraft(group.title);
@@ -126,8 +128,8 @@ export function CanvasGroupFrame({
             </div>
 
             <div
-                className="pointer-events-auto absolute left-0 flex h-6 max-w-[calc(100%-16px)] cursor-grab items-center gap-1 text-xs font-medium active:cursor-grabbing"
-                style={{ top: frameTop - 25, color: theme.node.muted }}
+                className="pointer-events-auto absolute left-0 flex h-6 cursor-grab items-center gap-1 text-xs font-medium active:cursor-grabbing"
+                style={{ top: frameTop - 28 * toolbarScale, width: titleWidth, color: theme.node.muted, transform: `scale(${toolbarScale})`, transformOrigin: "left center" }}
                 onPointerDown={(event) => {
                     if (editing) return;
                     onSelect();
@@ -153,7 +155,7 @@ export function CanvasGroupFrame({
                         }}
                     />
                 ) : (
-                    <span className="truncate">{group.title || "分组"} {nodeCount} 个节点</span>
+                    <span className="truncate">{title}</span>
                 )}
             </div>
         </div>
