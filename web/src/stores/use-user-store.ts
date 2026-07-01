@@ -5,6 +5,8 @@ import { persist } from "zustand/middleware";
 
 import { AUTH_TOKEN_KEY, fetchCurrentUser, login, register, type AuthPayload, type AuthUser } from "@/services/api/auth";
 
+export type LocalUser = AuthUser;
+
 type UserStore = {
     token: string;
     user: AuthUser | null;

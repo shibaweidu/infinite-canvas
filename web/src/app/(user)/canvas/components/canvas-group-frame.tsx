@@ -59,10 +59,11 @@ export function CanvasGroupFrame({
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [arrangeOpen, setArrangeOpen] = useState(false);
     const color = group.color || groupColors[0];
-    const toolbarScale = 1 / Math.max(scale, 0.05);
-    const toolbarWorldHeight = toolbarHeight * toolbarScale;
-    const outerTop = bounds.top - (selected ? toolbarWorldHeight + groupPadding + 18 : groupPadding + 22);
-    const frameTop = selected ? toolbarWorldHeight + 18 : 22;
+    const fixedScale = 1 / Math.max(scale, 0.05);
+    const toolbarWorldHeight = toolbarHeight * fixedScale;
+    const titleWorldOffset = 28 * fixedScale;
+    const outerTop = bounds.top - (selected ? toolbarWorldHeight + groupPadding + 18 : groupPadding + titleWorldOffset);
+    const frameTop = selected ? toolbarWorldHeight + 18 : titleWorldOffset;
     const frameWidth = bounds.width + groupPadding * 2;
     const frameHeight = bounds.height + groupPadding * 2;
     const title = `${group.title || "分组"} ${nodeCount} 个节点`;
@@ -100,7 +101,7 @@ export function CanvasGroupFrame({
                     onRun={onRun}
                     onBatchDownload={onBatchDownload}
                     onUngroup={onUngroup}
-                    scale={toolbarScale}
+                    scale={fixedScale}
                 />
             ) : null}
 
@@ -129,7 +130,7 @@ export function CanvasGroupFrame({
 
             <div
                 className="pointer-events-auto absolute left-0 flex h-6 cursor-grab items-center gap-1 text-xs font-medium active:cursor-grabbing"
-                style={{ top: frameTop - 28 * toolbarScale, width: titleWidth, color: theme.node.muted, transform: `scale(${toolbarScale})`, transformOrigin: "left center" }}
+                style={{ top: frameTop - titleWorldOffset, width: titleWidth, color: theme.node.muted, transform: `scale(${fixedScale})`, transformOrigin: "left center" }}
                 onPointerDown={(event) => {
                     if (editing) return;
                     onSelect();

@@ -409,7 +409,7 @@ func CurrentAuthUser(tokenText string) (model.AuthUser, bool) {
 	if err != nil {
 		return model.AuthUser{}, false
 	}
-	user, ok, err := repository.GetUserByID(claims.UserID)
+	user, ok, err := repository.RefreshUserCredits(claims.UserID, now())
 	if err != nil || !ok {
 		return model.AuthUser{}, false
 	}
@@ -515,18 +515,25 @@ func AdjustUserCredits(id string, credits int) (model.User, error) {
 		return user, safeMessageError{message: "用户不存在"}
 	}
 	oldCredits := user.Credits
-	user.Credits = credits
-	user.UpdatedAt = now()
-	user, err = repository.SaveUser(user)
+	current := now()
+	diff := credits - oldCredits
+	if diff > 0 {
+		user, _, err = repository.GrantUserCreditBatch(id, model.CreditBatchSourceAdmin, "admin_adjust", diff, "", current)
+	} else if diff < 0 {
+		user, _, _, err = repository.ConsumeUserCredits(id, -diff, current)
+	} else {
+		user.Password = ""
+		return user, nil
+	}
 	if err == nil && oldCredits != credits {
 		_, err = repository.SaveCreditLog(model.CreditLog{
 			ID:        newID("credit"),
 			UserID:    user.ID,
 			Type:      model.CreditLogTypeAdminAdjust,
-			Amount:    credits - oldCredits,
-			Balance:   credits,
+			Amount:    diff,
+			Balance:   user.Credits,
 			Remark:    "后台手动调整",
-			CreatedAt: now(),
+			CreatedAt: current,
 		})
 	}
 	user.Password = ""
@@ -537,14 +544,15 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 	if credits <= 0 {
 		return nil
 	}
-	user, ok, err := repository.ConsumeUserCredits(userID, credits, now())
+	current := now()
+	user, deductions, ok, err := repository.ConsumeUserCredits(userID, credits, current)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return safeMessageError{message: "积分不足"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	extra, _ := json.Marshal(map[string]any{"model": modelName, "deductions": deductions})
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -553,7 +561,7 @@ func ConsumeUserCredits(userID string, modelName string, credits int, path strin
 		Balance:   user.Credits,
 		Remark:    "调用模型 " + modelName,
 		Extra:     string(extra),
-		CreatedAt: now(),
+		CreatedAt: current,
 	})
 	return err
 }
@@ -562,14 +570,15 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 	if credits <= 0 {
 		return nil
 	}
-	user, ok, err := repository.RefundUserCredits(userID, credits, now())
+	current := now()
+	user, ok, err := repository.RefundUserCredits(userID, credits, current)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return safeMessageError{message: "用户不存在"}
 	}
-	extra, _ := json.Marshal(map[string]string{"model": modelName, "path": path})
+	extra, _ := json.Marshal(map[string]string{"model": modelName})
 	_, err = repository.SaveCreditLog(model.CreditLog{
 		ID:        newID("credit"),
 		UserID:    userID,
@@ -578,9 +587,36 @@ func RefundUserCredits(userID string, modelName string, credits int, path string
 		Balance:   user.Credits,
 		Remark:    "模型调用失败返还 " + modelName,
 		Extra:     string(extra),
-		CreatedAt: now(),
+		CreatedAt: current,
 	})
 	return err
+}
+
+func GrantSubscriptionCredits(userID string, planID string, credits int, expiresAt string) (model.User, error) {
+	user, ok, err := repository.GrantUserCreditBatch(userID, model.CreditBatchSourceSubscribe, planID, credits, expiresAt, now())
+	if err != nil {
+		return user, err
+	}
+	if !ok {
+		return user, safeMessageError{message: "用户不存在"}
+	}
+	return user, nil
+}
+
+func GrantRechargeCredits(userID string, packageID string, credits int, bonusCredits int) (model.User, error) {
+	current := now()
+	user, ok, err := repository.GrantUserCreditBatch(userID, model.CreditBatchSourceRecharge, packageID, credits, "", current)
+	if err != nil || !ok || bonusCredits <= 0 {
+		if !ok && err == nil {
+			err = safeMessageError{message: "用户不存在"}
+		}
+		return user, err
+	}
+	user, ok, err = repository.GrantUserCreditBatch(userID, model.CreditBatchSourceBonus, packageID, bonusCredits, "", current)
+	if !ok && err == nil {
+		err = safeMessageError{message: "用户不存在"}
+	}
+	return user, err
 }
 
 func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
@@ -588,6 +624,7 @@ func ListCreditLogs(q model.Query) (model.CreditLogList, error) {
 	if err != nil {
 		return model.CreditLogList{}, err
 	}
+	sanitizeCreditLogs(logs)
 	return model.CreditLogList{Items: logs, Total: int(total)}, nil
 }
 
@@ -601,6 +638,48 @@ func SaveCreditLog(log model.CreditLog) (model.CreditLog, error) {
 
 func DeleteCreditLog(id string) error {
 	return repository.DeleteCreditLog(id)
+}
+
+func sanitizeCreditLogs(logs []model.CreditLog) {
+	for i := range logs {
+		logs[i].Remark = sanitizeModelEndpointText(logs[i].Remark)
+		logs[i].Extra = sanitizeModelEndpointText(logs[i].Extra)
+	}
+}
+
+func sanitizeModelEndpointText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	if strings.HasPrefix(value, "{") {
+		var extra map[string]any
+		if json.Unmarshal([]byte(value), &extra) == nil {
+			delete(extra, "path")
+			if modelName, ok := extra["model"].(string); ok {
+				extra["model"] = sanitizeModelName(modelName)
+			}
+			if data, err := json.Marshal(extra); err == nil {
+				return string(data)
+			}
+		}
+	}
+	fields := strings.Fields(value)
+	for i, field := range fields {
+		if strings.HasPrefix(field, "http://") || strings.HasPrefix(field, "https://") || strings.Contains(field, "||http://") || strings.Contains(field, "||https://") {
+			fields[i] = sanitizeModelName(field)
+		}
+	}
+	return strings.TrimSpace(strings.Join(fields, " "))
+}
+
+func sanitizeModelName(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.Contains(value, "||") {
+		parts := strings.Split(value, "||")
+		return strings.TrimSpace(parts[len(parts)-1])
+	}
+	return strings.TrimSpace(strings.TrimRight(strings.Split(value, "http://")[0], "|"))
 }
 
 func DeleteUser(id string) error {

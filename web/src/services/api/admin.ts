@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
+import axios from "axios";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
 
 export type AdminPromptCategory = {
@@ -51,6 +52,74 @@ export type AdminCreditLogListResponse = {
     total: number;
 };
 
+export type AdminAnnouncement = {
+    id: string;
+    title: string;
+    summary: string;
+    content: string;
+    pinned: boolean;
+    enabled: boolean;
+    sort: number;
+    publishedAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminAnnouncementListResponse = {
+    items: AdminAnnouncement[];
+    total: number;
+};
+
+export type AdminUploadedObject = {
+    url: string;
+    key: string;
+    mimeType: string;
+    bytes: number;
+};
+
+export type AdminBillingBenefit = {
+    text: string;
+    tag: string;
+};
+
+export type AdminSubscriptionPlan = {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    originalPrice: number;
+    credits: number;
+    durationDays: number;
+    priceCycle: string;
+    buttonText: string;
+    creditLabel: string;
+    creditRateText: string;
+    benefits: AdminBillingBenefit[];
+    enabled: boolean;
+    sort: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminCreditPackage = {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    originalPrice: number;
+    credits: number;
+    bonusCredits: number;
+    priceCycle: string;
+    buttonText: string;
+    creditLabel: string;
+    creditRateText: string;
+    benefits: AdminBillingBenefit[];
+    enabled: boolean;
+    sort: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type AdminUserQuery = {
     keyword?: string;
     page?: number;
@@ -83,6 +152,52 @@ export async function saveAdminCreditLog(token: string, log: Partial<AdminCredit
 
 export async function deleteAdminCreditLog(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/credit-logs/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminAnnouncements(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminAnnouncementListResponse>("/api/admin/announcements", compactApiParams(query), token);
+}
+
+export async function saveAdminAnnouncement(token: string, item: Partial<AdminAnnouncement>) {
+    return apiPost<AdminAnnouncement>("/api/admin/announcements", item, token);
+}
+
+export async function deleteAdminAnnouncement(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/announcements/${encodeURIComponent(id)}`, token);
+}
+
+export async function uploadAdminAnnouncementImage(token: string, file: File) {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    const response = await axios.post<{ code: number; data: AdminUploadedObject; msg: string }>("/api/admin/announcements/images", body, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.data.code !== 0) throw new Error(response.data.msg || "图片上传失败");
+    return response.data.data;
+}
+
+export async function fetchAdminSubscriptionPlans(token: string) {
+    return apiGet<AdminSubscriptionPlan[]>("/api/admin/billing/subscription-plans", undefined, token);
+}
+
+export async function saveAdminSubscriptionPlan(token: string, item: Partial<AdminSubscriptionPlan>) {
+    return apiPost<AdminSubscriptionPlan>("/api/admin/billing/subscription-plans", item, token);
+}
+
+export async function deleteAdminSubscriptionPlan(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/billing/subscription-plans/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminCreditPackages(token: string) {
+    return apiGet<AdminCreditPackage[]>("/api/admin/billing/credit-packages", undefined, token);
+}
+
+export async function saveAdminCreditPackage(token: string, item: Partial<AdminCreditPackage>) {
+    return apiPost<AdminCreditPackage>("/api/admin/billing/credit-packages", item, token);
+}
+
+export async function deleteAdminCreditPackage(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/billing/credit-packages/${encodeURIComponent(id)}`, token);
 }
 
 export async function fetchAdminPromptCategories(token: string) {
@@ -162,6 +277,7 @@ export type AdminModelChannel = {
     name: string;
     baseUrl: string;
     apiKey: string;
+    hasApiKey?: boolean;
     models: string[];
     modelItems: AdminProviderModel[];
     weight: number;
@@ -257,6 +373,7 @@ export type AdminModelCost = {
     credits: number;
     resolutionCosts: AdminResolutionCost[];
     secondCredits: number;
+    apiRoutes?: AdminModelApiRoute[];
 };
 
 export type AdminPublicSettings = {

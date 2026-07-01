@@ -21,9 +21,13 @@ description: 当前后端主要数据表与字段说明
 
 - `users`
 - `credit_logs`
+- `credit_batches`
 - `prompts`
 - `assets`
 - `settings`
+- `announcements`
+- `subscription_plans`
+- `credit_packages`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -40,7 +44,7 @@ description: 当前后端主要数据表与字段说明
 | `display_name` | string | 昵称 |
 | `avatar_url` | string | 头像地址 |
 | `role` | string | 角色：`user`、`admin` |
-| `credits` | number | 积分余额 |
+| `credits` | number | 积分余额缓存，来自未过期积分批次的剩余积分合计 |
 | `aff_code` | string | 用户自己的邀请码，唯一索引 |
 | `aff_count` | number | 已邀请用户数量，冗余统计字段 |
 | `inviter_id` | string | 邀请人用户 ID |
@@ -87,6 +91,85 @@ description: 当前后端主要数据表与字段说明
 | `description` | string | 描述 |
 | `content` | text | 文本或 Markdown 内容 |
 | `url` | string | 图片、视频等媒体地址 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### announcements
+
+公告表。用于保存前台公告列表和后台发布、置顶、显示控制。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `title` | string | 公告标题 |
+| `summary` | text | 摘要 |
+| `content` | text | 正文 |
+| `pinned` | bool | 是否置顶 |
+| `enabled` | bool | 是否前台显示 |
+| `sort` | number | 排序值 |
+| `published_at` | string | 发布时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### subscription_plans
+
+订阅套餐表。用于后台维护前台展示的订阅套餐和积分规则。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 套餐名称 |
+| `description` | text | 套餐说明 |
+| `price` | number | 价格，单位为分 |
+| `original_price` | number | 前台展示原价，单位为分，可为空 |
+| `credits` | number | 套餐包含积分 |
+| `duration_days` | number | 有效天数 |
+| `price_cycle` | string | 前台展示价格周期，例如 `每月` |
+| `button_text` | string | 前台按钮文案 |
+| `credit_label` | string | 前台积分模块文案 |
+| `credit_rate_text` | string | 前台积分换算说明 |
+| `benefits` | json | 前台权益列表，字段为 `text` 和 `tag` |
+| `enabled` | bool | 是否启用 |
+| `sort` | number | 排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### credit_packages
+
+积分充值包表。用于后台维护前台展示的积分充值规则。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 充值包名称 |
+| `description` | text | 充值包说明 |
+| `price` | number | 价格，单位为分 |
+| `original_price` | number | 前台展示原价，单位为分，可为空 |
+| `credits` | number | 基础积分 |
+| `bonus_credits` | number | 赠送积分 |
+| `price_cycle` | string | 前台展示价格周期，例如 `一次性` |
+| `button_text` | string | 前台按钮文案 |
+| `credit_label` | string | 前台积分模块文案 |
+| `credit_rate_text` | string | 前台积分换算说明 |
+| `benefits` | json | 前台权益列表，字段为 `text` 和 `tag` |
+| `enabled` | bool | 是否启用 |
+| `sort` | number | 排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### credit_batches
+
+用户积分批次表。用于区分订阅积分、充值积分、赠送积分、后台调整和失败返还。订阅积分可设置过期时间；充值积分和赠送积分不设置过期时间。消费积分时先扣未过期且最早过期的批次，再扣永久批次。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `source_type` | string | 来源：`subscribe`、`recharge`、`bonus`、`admin`、`refund` |
+| `source_id` | string | 来源业务 ID，例如套餐 ID、充值包 ID 或后台调整标识 |
+| `total_credits` | number | 批次总积分 |
+| `remaining_credits` | number | 批次剩余积分 |
+| `expires_at` | string | 过期时间；为空表示永久有效 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
@@ -189,6 +272,7 @@ description: 当前后端主要数据表与字段说明
 | `name` | string | 渠道名称 |
 | `baseUrl` | string | 渠道接口地址 |
 | `apiKey` | string | 渠道密钥 |
+| `hasApiKey` | bool | 后台读取配置时返回的密钥状态标记，用于提示已配置密钥但不暴露密钥内容 |
 | `models` | string[] | 渠道已启用模型列表，由 `modelItems` 中启用项同步生成 |
 | `modelItems` | object[] | 渠道模型明细，包含模型展示信息、分类、选择状态、启用状态、计费配置和 API 路由 |
 | `weight` | number | 渠道权重，同一模型命中多个渠道时按权重随机 |
@@ -212,6 +296,13 @@ description: 当前后端主要数据表与字段说明
 | `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
 | `secondCredits` | number | 视频模型每秒扣除的积分 |
 | `apiRoutes` | object[] | API 路由选项，字段为 `path` 和 `enabled` |
+
+当前支持的 `apiRoutes.path`：
+
+- 文本：`/chat/completions`
+- 图片：`/images/generations`、`/images/edits`、`/chat/completions`、`/responses`、`/v1/async/generations`、`/v1/videos`
+- 视频：`/chat/completions`、`/video/generations`、`/v1/video/create`、`/videos`、`/v1/async/generations`、`/async/generations`、`/video/create`
+- 音频：`/audio/speech`
 
 `promptSync` 字段：
 

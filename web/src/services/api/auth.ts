@@ -20,6 +20,69 @@ export type AuthSession = {
     user: AuthUser;
 };
 
+export type AccountCreditLog = {
+    id: string;
+    userId: string;
+    type: string;
+    amount: number;
+    balance: number;
+    relatedId: string;
+    remark: string;
+    extra: string;
+    createdAt: string;
+};
+
+export type BillingBenefit = {
+    text: string;
+    tag: string;
+};
+
+export type SubscriptionPlan = {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    originalPrice: number;
+    credits: number;
+    durationDays: number;
+    priceCycle: string;
+    buttonText: string;
+    creditLabel: string;
+    creditRateText: string;
+    benefits: BillingBenefit[];
+    enabled: boolean;
+    sort: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type CreditPackage = {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    originalPrice: number;
+    credits: number;
+    bonusCredits: number;
+    priceCycle: string;
+    buttonText: string;
+    creditLabel: string;
+    creditRateText: string;
+    benefits: BillingBenefit[];
+    enabled: boolean;
+    sort: number;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AccountSummary = {
+    user: AuthUser;
+    plans: SubscriptionPlan[];
+    creditPackages: CreditPackage[];
+    rechargeRecords: AccountCreditLog[];
+    consumeRecords: AccountCreditLog[];
+};
+
 export type AuthPayload = {
     username: string;
     email?: string;
@@ -41,4 +104,8 @@ export async function sendRegisterEmailCode(email: string) {
 
 export async function fetchCurrentUser(token?: string) {
     return apiGet<AuthUser>("/api/auth/me", undefined, token);
+}
+
+export async function fetchAccountSummary(token: string) {
+    return apiGet<AccountSummary>("/api/account/summary", undefined, token);
 }

@@ -14,6 +14,21 @@ export const modelTypeLabels: Record<AdminModelType, string> = {
     audio: "音频",
 };
 
+export const modelApiRouteLabels: Record<string, string> = {
+    "/chat/completions": "Chat Completions",
+    "/images/generations": "Images Generations",
+    "/images/edits": "Images Edits",
+    "/responses": "Responses",
+    "/v1/async/generations": "Unified Async Generations",
+    "/v1/videos": "Newtoken Async",
+    "/video/generations": "Video Generations",
+    "/v1/video/create": "Yunwu Video Create",
+    "/videos": "Videos",
+    "/async/generations": "Async Generations",
+    "/video/create": "LNAPI Video Create",
+    "/audio/speech": "Audio Speech",
+};
+
 export const defaultImageCosts: AdminResolutionCost[] = [
     { resolution: "1k", credits: 10 },
     { resolution: "2k", credits: 20 },
@@ -21,19 +36,25 @@ export const defaultImageCosts: AdminResolutionCost[] = [
 ];
 
 export const modelApiRoutes: Record<AdminModelType, AdminModelApiRoute[]> = {
-    text: [
-        { path: "/v1/chat/completions", enabled: true },
-        { path: "/v1/responses", enabled: false },
-    ],
+    text: [{ path: "/chat/completions", enabled: true }],
     image: [
-        { path: "/v1/images/generations", enabled: true },
-        { path: "/v1/images/edits", enabled: false },
+        { path: "/images/generations", enabled: true },
+        { path: "/images/edits", enabled: false },
+        { path: "/chat/completions", enabled: false },
+        { path: "/responses", enabled: false },
+        { path: "/v1/async/generations", enabled: false },
+        { path: "/v1/videos", enabled: false },
     ],
     video: [
-        { path: "/v1/videos/generations", enabled: true },
-        { path: "/v1/video/generations", enabled: false },
+        { path: "/chat/completions", enabled: false },
+        { path: "/video/generations", enabled: true },
+        { path: "/v1/video/create", enabled: false },
+        { path: "/videos", enabled: false },
+        { path: "/v1/async/generations", enabled: false },
+        { path: "/async/generations", enabled: false },
+        { path: "/video/create", enabled: false },
     ],
-    audio: [{ path: "/v1/audio/speech", enabled: true }],
+    audio: [{ path: "/audio/speech", enabled: true }],
 };
 
 export const imageCreditResolutions: AdminResolutionCost[] = [
@@ -88,6 +109,7 @@ export function normalizeChannel(channel: Partial<AdminModelChannel>): AdminMode
         name: channel.name || "",
         baseUrl: channel.baseUrl || "",
         apiKey: channel.apiKey || "",
+        hasApiKey: channel.hasApiKey === true || Boolean(channel.apiKey?.trim()),
         models: modelItems.filter((item) => item.selected && item.enabled).map((item) => item.model),
         modelItems,
         weight: Math.max(1, Number(channel.weight) || 1),
@@ -128,8 +150,7 @@ export function defaultProviderModel(model: string): AdminProviderModel {
 
 export function modelToCost(item: AdminProviderModel, channel: Pick<AdminModelChannel, "name" | "baseUrl">): AdminModelCost {
     const providerName = channel.name.trim();
-    const providerEndpoint = normalizeEndpoint(channel.baseUrl);
-    return { model: publicModelId(channel, item), upstreamModel: item.model, name: item.name, type: item.type, thumbnailUrl: item.thumbnailUrl, providerName, providerEndpoint, providerDisplayName: item.providerDisplayName || providerName, description: item.description, tags: item.tags, credits: item.credits, resolutionCosts: item.resolutionCosts, secondCredits: item.secondCredits };
+    return { model: publicModelId(channel, item), upstreamModel: item.model, name: item.name, type: item.type, thumbnailUrl: item.thumbnailUrl, providerName, providerEndpoint: "", providerDisplayName: item.providerDisplayName || providerName, description: item.description, tags: item.tags, credits: item.credits, resolutionCosts: item.resolutionCosts, secondCredits: item.secondCredits, apiRoutes: item.apiRoutes };
 }
 
 function mergeModelCost(base: AdminModelCost, next: AdminModelCost): AdminModelCost {
@@ -157,7 +178,7 @@ function mergeDescription(base: string, next: string) {
 }
 
 function publicModelId(channel: Pick<AdminModelChannel, "name" | "baseUrl">, item: Pick<AdminProviderModel, "model">) {
-    return [channel.name.trim(), normalizeEndpoint(channel.baseUrl), item.model.trim()].join("||");
+    return [channel.name.trim(), item.model.trim()].join("||");
 }
 
 function normalizeEndpoint(value: string) {
@@ -235,13 +256,25 @@ function pickDefault(current: string, models: string[]) {
 }
 
 function normalizeModelApiRoutes(type: AdminModelType, routes: AdminModelApiRoute[] | undefined) {
-    const source = routes?.length ? routes : modelApiRoutes[type];
+    const defaults = modelApiRoutes[type];
+    const existing = new Map((routes || []).map((route) => [normalizeRoutePath(route.path), route.enabled === true]));
     const seen = new Set<string>();
-    return source
-        .map((route) => ({ path: route.path.trim(), enabled: route.enabled === true }))
+    return defaults
+        .map((route) => ({ path: route.path, enabled: existing.has(route.path) ? existing.get(route.path) === true : route.enabled === true }))
         .filter((route) => {
             if (!route.path || seen.has(route.path)) return false;
             seen.add(route.path);
             return true;
         });
+}
+
+function normalizeRoutePath(path: string) {
+    const value = path.trim();
+    if (value === "/v1/chat/completions") return "/chat/completions";
+    if (value === "/v1/images/generations") return "/images/generations";
+    if (value === "/v1/images/edits") return "/images/edits";
+    if (value === "/v1/responses") return "/responses";
+    if (value === "/v1/audio/speech") return "/audio/speech";
+    if (value === "/v1/videos/generations" || value === "/v1/video/generations") return "/video/generations";
+    return value;
 }

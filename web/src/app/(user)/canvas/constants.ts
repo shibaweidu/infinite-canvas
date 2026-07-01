@@ -70,7 +70,7 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.ScriptAgent]: { width: 380, height: 320, title: "剧本Agent" },
     [CanvasNodeType.CharacterAgent]: { width: 380, height: 320, title: "角色Agent" },
     [CanvasNodeType.StoryboardAgent]: { width: 380, height: 320, title: "分镜Agent" },
-    [CanvasNodeType.ProjectBrief]: { width: 620, height: 520, title: "故事设定" },
+    [CanvasNodeType.ProjectBrief]: { width: 620, height: 830, title: "故事设定" },
     [CanvasNodeType.SubjectBoard]: { width: 900, height: 560, title: "角色板" },
     [CanvasNodeType.Storyboard]: { width: 1040, height: 560, title: "分镜板" },
 } satisfies Record<CanvasNodeType, { width: number; height: number; title: string }>;

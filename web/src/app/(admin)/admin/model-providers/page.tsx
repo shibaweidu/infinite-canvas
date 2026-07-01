@@ -9,7 +9,7 @@ import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, type AdminMo
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
-import { defaultProviderModel, mergeApiKeys, modelApiRoutes, modelTypeLabels, normalizeChannel, normalizeProviderModel, normalizeSettings, syncPublicModelChannel, unique } from "../model-management";
+import { defaultProviderModel, mergeApiKeys, modelApiRouteLabels, modelApiRoutes, modelTypeLabels, normalizeChannel, normalizeProviderModel, normalizeSettings, syncPublicModelChannel, unique } from "../model-management";
 
 type PageView = "providers" | "routing";
 type ModelEditorTarget = { providerIndex: number; model: string };
@@ -262,6 +262,7 @@ export default function AdminModelProvidersPage() {
                                 <div className="space-y-2">
                                     {channels.map((provider, index) => {
                                         const selected = index === selectedIndex;
+                                        const hasApiKey = provider.hasApiKey || Boolean(provider.apiKey.trim());
                                         return (
                                             <button key={`${provider.name}-${provider.baseUrl}-${index}`} type="button" onClick={() => setSelectedIndex(index)} className={`${selected ? "border-white/35 bg-white/[0.10]" : "border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.06]"} w-full rounded-2xl border px-3 py-3 text-left transition`}>
                                                 <div className="flex items-center gap-2">
@@ -271,7 +272,7 @@ export default function AdminModelProvidersPage() {
                                                 <div className="mt-2 truncate text-xs text-[#8f97aa]">{provider.baseUrl || "尚未填写 Base URL"}</div>
                                                 <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-[#8f97aa]">
                                                     <span className="rounded-full bg-white/[0.06] px-2 py-0.5">{provider.modelItems.length} 个模型</span>
-                                                    <span className={provider.apiKey ? "rounded-full bg-white/[0.10] px-2 py-0.5 text-[#e5e7eb]" : "rounded-full bg-white/[0.05] px-2 py-0.5 text-[#9aa3b5]"}>{provider.apiKey ? "已配置 Key" : "未配置 Key"}</span>
+                                                    <span className={hasApiKey ? "rounded-full bg-white/[0.10] px-2 py-0.5 text-[#e5e7eb]" : "rounded-full bg-white/[0.05] px-2 py-0.5 text-[#9aa3b5]"}>{hasApiKey ? "已配置 Key" : "未配置 Key"}</span>
                                                 </div>
                                             </button>
                                         );
@@ -420,16 +421,10 @@ function ProviderFields({ channel, onChange }: { channel: AdminModelChannel; onC
             </Field>
             <Field label="API Key">
                 <textarea className={`${textareaClass} min-h-[92px] resize-y font-mono leading-5`} value={channel.apiKey} onChange={(event) => onChange({ apiKey: event.target.value })} placeholder="一行一个 API Key" />
-                <p className="mt-1 text-xs text-[#8f97aa]">多行时会随配置保存；代理请求仍由后端选择渠道。</p>
-            </Field>
-            <Field label="权重">
-                <input className={inputClass} type="number" min={1} value={channel.weight} onChange={(event) => onChange({ weight: Math.max(1, Number(event.target.value) || 1) })} />
+                <p className="mt-1 text-xs text-[#8f97aa]">{channel.hasApiKey && !channel.apiKey.trim() ? "已保存密钥；留空保存会继续沿用原密钥。" : "多行时会随配置保存；代理请求仍由后端选择渠道。"}</p>
             </Field>
             <Field label="启用供应商">
                 <Toggle checked={channel.enabled} onChange={(enabled) => onChange({ enabled })} />
-            </Field>
-            <Field label="备注">
-                <textarea className={`${textareaClass} min-h-[92px] resize-y`} value={channel.remark} onChange={(event) => onChange({ remark: event.target.value })} />
             </Field>
         </>
     );
@@ -601,11 +596,12 @@ function ModelEditModal({
                     </Field>
 
                     <div>
-                        <div className="mb-2 text-sm font-medium text-white">API 路由</div>
+                        <div className="mb-2 text-sm font-medium text-white">接口选择</div>
                         <div className="grid gap-2 md:grid-cols-2">
                             {model.apiRoutes.map((route) => (
                                 <button key={route.path} type="button" onClick={() => onChange({ apiRoutes: model.apiRoutes.map((item) => (item.path === route.path ? { ...item, enabled: !item.enabled } : item)) })} className={`${route.enabled ? "border-white/45 bg-white/[0.10] text-white" : "border-white/[0.08] bg-[#1b1f29] text-[#8f97aa] hover:bg-white/[0.06]"} rounded-xl border px-3 py-3 text-left text-sm transition`}>
-                                    <div className="font-medium">{route.path}</div>
+                                    <div className="font-medium">{modelApiRouteLabels[route.path] || route.path}</div>
+                                    <div className="mt-1 font-mono text-[11px] opacity-70">{route.path}</div>
                                     <div className="mt-1 text-xs opacity-75">{route.enabled ? "已启用" : "未启用"}</div>
                                 </button>
                             ))}

@@ -6,7 +6,7 @@ import { Check, ChevronDown, Cpu } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { cn } from "@/lib/utils";
-import { useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelOptionName, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AdminModelCost, AdminModelType } from "@/services/api/admin";
 
@@ -28,7 +28,6 @@ type PickerModel = {
     name?: string;
     thumbnailUrl?: string;
     providerName?: string;
-    providerEndpoint?: string;
     providerDisplayName?: string;
     description?: string;
     tags?: string[];
@@ -256,7 +255,6 @@ function buildCloudModels(costs: AdminModelCost[], availableModels: string[], mo
             type: item.type || inferModelType(item.upstreamModel || item.model),
             thumbnailUrl: item.thumbnailUrl,
             providerName: item.providerName,
-            providerEndpoint: item.providerEndpoint,
             providerDisplayName: item.providerDisplayName,
             description: item.description,
             tags: item.tags,
@@ -270,7 +268,7 @@ function buildLocalModels(models: string[], current: string, modelType?: AdminMo
 }
 
 function displayModelName(model: PickerModel | undefined, fallback: string) {
-    return model?.name?.trim() || fallback;
+    return modelOptionName(model?.name?.trim() || model?.upstreamModel || fallback);
 }
 
 function resolveModelIcon(model: string) {

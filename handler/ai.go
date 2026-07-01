@@ -33,6 +33,14 @@ func AIVideos(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/videos")
 }
 
+func AIProxyPost(w http.ResponseWriter, r *http.Request, path string) {
+	proxyAIRequest(w, r, path)
+}
+
+func AIProxyGet(w http.ResponseWriter, r *http.Request, path string) {
+	proxyAIGetRequest(w, r, path)
+}
+
 func AIVideo(w http.ResponseWriter, r *http.Request, id string) {
 	proxyAIGetRequest(w, r, "/videos/"+id)
 }
@@ -50,6 +58,10 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 	if err != nil {
 		log.Printf("AI proxy select channel failed: model=%s err=%v", modelName, err)
 		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
+		return
+	}
+	if !service.ModelAllowsAPIRoute(modelName, baseAIProxyRoute(path)) {
+		Fail(w, "该模型未启用当前接口")
 		return
 	}
 	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
@@ -86,6 +98,10 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
+	if !service.ModelAllowsAPIRoute(modelName, path) {
+		Fail(w, "该模型未启用当前接口")
+		return
+	}
 	body, contentType, err = rewriteAIRequestModel(body, contentType, upstreamModel)
 	if err != nil {
 		log.Printf("AI proxy rewrite model failed: model=%s upstream=%s err=%v", modelName, upstreamModel, err)
@@ -95,7 +111,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 	path = resolveAIProxyPath(channel.BaseURL, upstreamModel, path)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
-		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
+		log.Printf("AI proxy build request failed: model=%s path=%s err=%v", modelName, path, err)
 		Fail(w, "AI 鎺ュ彛璇锋眰澶辫触")
 		return
 	}
@@ -117,7 +133,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func()) {
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		log.Printf("AI proxy request failed: url=%s err=%v", request.URL.String(), err)
+		log.Printf("AI proxy request failed: path=%s err=%v", request.URL.Path, err)
 		if onFailure != nil {
 			onFailure()
 		}
@@ -128,7 +144,7 @@ func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func
 
 	if response.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		log.Printf("AI upstream error: url=%s status=%d", request.URL.String(), response.StatusCode)
+		log.Printf("AI upstream error: path=%s status=%d", request.URL.Path, response.StatusCode)
 		if onFailure != nil {
 			onFailure()
 		}
@@ -262,6 +278,15 @@ func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 	}
 	if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
 		return "/contents/generations/tasks/" + strings.TrimPrefix(path, "/videos/")
+	}
+	return path
+}
+
+func baseAIProxyRoute(path string) string {
+	for _, marker := range []string{"/v1/async/generations/", "/async/generations/", "/v1/videos/", "/videos/", "/video/generations/", "/v1/video/generations/", "/video/tasks/", "/v1/video/tasks/", "/tasks/", "/v1/tasks/"} {
+		if strings.HasPrefix(path, marker) {
+			return strings.TrimSuffix(marker, "/")
+		}
 	}
 	return path
 }

@@ -24,6 +24,7 @@ const defaultSite: AdminSiteSettings = {
         { id: "video", label: "视频创作台", path: "/video", enabled: true, sort: 30 },
         { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 40 },
         { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 50 },
+        { id: "announcements", label: "公告", path: "/announcements", enabled: true, sort: 60 },
     ],
 };
 

@@ -1177,13 +1177,14 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
             type: item.type || inferModelType(item.upstreamModel || item.model || ""),
             thumbnailUrl: item.thumbnailUrl?.trim() || "",
             providerName: item.providerName?.trim() || "",
-            providerEndpoint: item.providerEndpoint?.trim() || "",
+            providerEndpoint: "",
             providerDisplayName: item.providerDisplayName?.trim() || "",
             description: item.description?.trim() || "",
             tags: uniqueModels(item.tags || []),
             credits: Math.max(0, Number(item.credits) || 0),
             resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0) })),
             secondCredits: Math.max(0, Number(item.secondCredits) || 0),
+            apiRoutes: item.apiRoutes || [],
         }));
 }
 
@@ -1235,6 +1236,7 @@ function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChan
         name: item.name || "",
         baseUrl: item.baseUrl || "",
         apiKey: item.apiKey || "",
+        hasApiKey: item.hasApiKey === true || Boolean(item.apiKey?.trim()),
         models: modelItems.filter((model) => model.selected && model.enabled).map((model) => model.model),
         modelItems,
         weight: Math.max(1, Number(item.weight) || 1),
@@ -1265,13 +1267,41 @@ function normalizeProviderModels(items: Array<Partial<AdminModelChannel["modelIt
     });
 }
 
-function normalizeModelApiRoutes(type: "text" | "image" | "video", routes: AdminModelChannel["modelItems"][number]["apiRoutes"] = []) {
+function normalizeModelApiRoutes(type: "text" | "image" | "video" | "audio", routes: AdminModelChannel["modelItems"][number]["apiRoutes"] = []) {
     const defaults = {
-        text: [{ path: "/v1/chat/completions", enabled: true }],
-        image: [{ path: "/v1/images/generations", enabled: true }],
-        video: [{ path: "/v1/videos/generations", enabled: true }],
+        text: [{ path: "/chat/completions", enabled: true }],
+        image: [
+            { path: "/images/generations", enabled: true },
+            { path: "/images/edits", enabled: false },
+            { path: "/chat/completions", enabled: false },
+            { path: "/responses", enabled: false },
+            { path: "/v1/async/generations", enabled: false },
+            { path: "/v1/videos", enabled: false },
+        ],
+        video: [
+            { path: "/chat/completions", enabled: false },
+            { path: "/video/generations", enabled: true },
+            { path: "/v1/video/create", enabled: false },
+            { path: "/videos", enabled: false },
+            { path: "/v1/async/generations", enabled: false },
+            { path: "/async/generations", enabled: false },
+            { path: "/video/create", enabled: false },
+        ],
+        audio: [{ path: "/audio/speech", enabled: true }],
     };
-    return (routes.length ? routes : defaults[type]).map((route) => ({ path: route.path.trim(), enabled: route.enabled === true })).filter((route) => route.path);
+    const existing = new Map(routes.map((route) => [normalizeRoutePath(route.path), route.enabled === true]));
+    return defaults[type].map((route) => ({ path: route.path, enabled: existing.has(route.path) ? existing.get(route.path) === true : route.enabled === true })).filter((route) => route.path);
+}
+
+function normalizeRoutePath(path: string) {
+    const value = path.trim();
+    if (value === "/v1/chat/completions") return "/chat/completions";
+    if (value === "/v1/images/generations") return "/images/generations";
+    if (value === "/v1/images/edits") return "/images/edits";
+    if (value === "/v1/responses") return "/responses";
+    if (value === "/v1/audio/speech") return "/audio/speech";
+    if (value === "/v1/videos/generations" || value === "/v1/video/generations") return "/video/generations";
+    return value;
 }
 
 function inferModelType(model: string): "text" | "image" | "video" {
@@ -1309,7 +1339,7 @@ function collectChannelModels(channels: AdminModelChannel[]) {
 }
 
 function publicModelId(channel: Pick<AdminModelChannel, "name" | "baseUrl">, model: { model: string }) {
-    return [channel.name.trim(), normalizeEndpoint(channel.baseUrl), model.model.trim()].join("||");
+    return [channel.name.trim(), model.model.trim()].join("||");
 }
 
 function normalizeEndpoint(value: string) {

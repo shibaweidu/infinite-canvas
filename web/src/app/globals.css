@@ -48,6 +48,21 @@
 }
 
 :root {
+    /* 应用主色系统 - 黑白灰色调 */
+    --app-primary: #171717;
+    --app-primary-hover: #0a0a0a;
+    --app-primary-light: #f5f5f5;
+    --app-primary-foreground: #FFFFFF;
+    --app-bg-cream: #fafafa;
+    --app-bg-surface: #ffffff;
+    --app-bg-white: #FFFFFF;
+    --app-bg-charcoal: #0a0a0a;
+    --app-border-hairline: #e5e5e5;
+    --app-text-primary: #171717;
+    --app-text-muted: #737373;
+    --app-text-light: #a3a3a3;
+
+    /* Shadcn/UI 变量 */
     --radius: 0.625rem;
     --border: oklch(0.922 0 0);
     --ring: oklch(0.708 0 0);
@@ -128,6 +143,20 @@
     body {
         @apply bg-background text-foreground;
     }
+    a[href],
+    button:not(:disabled),
+    [role="button"],
+    .ant-btn:not(:disabled):not(.ant-btn-disabled),
+    .ant-dropdown-menu-item:not(.ant-dropdown-menu-item-disabled),
+    .ant-menu-item:not(.ant-menu-item-disabled) {
+        cursor: pointer;
+    }
+    button:disabled,
+    .ant-btn-disabled,
+    .ant-dropdown-menu-item-disabled,
+    .ant-menu-item-disabled {
+        cursor: not-allowed;
+    }
     textarea {
         resize: none;
     }
@@ -187,6 +216,12 @@
 
     .hide-scrollbar::-webkit-scrollbar {
         display: none;
+    }
+
+    .announcement-document-editor:empty::before {
+        color: var(--app-text-muted);
+        content: attr(data-placeholder);
+        pointer-events: none;
     }
 
     .prompt-filter-tag.ant-tag-checkable {
@@ -300,6 +335,63 @@
 
     .hover-scrollbar-hint:hover::after {
         opacity: 1;
+    }
+
+    /* React Quill 富文本编辑器样式 */
+    .ql-container {
+        font-family: inherit;
+        font-size: 14px;
+    }
+
+    .ql-editor {
+        min-height: 200px;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .ql-editor.ql-blank::before {
+        color: var(--app-text-light);
+        font-style: normal;
+    }
+
+    .ql-toolbar.ql-snow {
+        border-color: var(--app-border-hairline);
+        border-radius: 8px 8px 0 0;
+    }
+
+    .ql-container.ql-snow {
+        border-color: var(--app-border-hairline);
+        border-radius: 0 0 8px 8px;
+    }
+
+    .dark .ql-toolbar.ql-snow,
+    .dark .ql-container.ql-snow {
+        border-color: rgba(214, 211, 209, 0.2);
+    }
+
+    .dark .ql-editor.ql-blank::before {
+        color: #78716c;
+    }
+
+    .dark .ql-snow .ql-stroke {
+        stroke: #e7e5e4;
+    }
+
+    .dark .ql-snow .ql-fill {
+        fill: #e7e5e4;
+    }
+
+    .dark .ql-snow .ql-picker-label {
+        color: #e7e5e4;
+    }
+
+    .dark .ql-toolbar.ql-snow .ql-picker.ql-expanded .ql-picker-label {
+        border-color: rgba(214, 211, 209, 0.2);
+    }
+
+    .dark .ql-snow .ql-picker-options {
+        background-color: #292524;
+        border-color: rgba(214, 211, 209, 0.2);
     }
 
     .canvas-control-select.ant-select .ant-select-selector,

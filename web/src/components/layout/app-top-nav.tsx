@@ -8,6 +8,7 @@ import { useState } from "react";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { AnnouncementsDialog } from "@/components/dialogs/announcements-dialog";
 import { navigationTools } from "@/constant/navigation-tools";
 import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/stores/use-config-store";
@@ -23,6 +24,7 @@ type RuntimeNavItem = {
 export function AppTopNav() {
     const pathname = usePathname();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [announcementsOpen, setAnnouncementsOpen] = useState(false);
     const site = useConfigStore((state) => state.publicSettings?.site);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const navItems = resolveNavItems(site?.navigation);
@@ -37,7 +39,7 @@ export function AppTopNav() {
                 <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
                         <div className="flex min-w-0 items-center">
-                            <Link href="/" className="flex h-full shrink-0 items-center gap-2.5 text-left text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                            <Link href="/" className="flex h-full shrink-0 cursor-pointer items-center gap-2.5 text-left text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                                 <img src={logoUrl} alt="" className="size-6 shrink-0 object-contain" />
                                 <span className="inline-flex min-w-0 items-baseline gap-2 text-left">
                                     <span className="max-w-32 truncate text-base font-medium">{siteName}</span>
@@ -47,7 +49,7 @@ export function AppTopNav() {
 
                             <button
                                 type="button"
-                                className="ml-3 inline-flex size-8 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 md:hidden dark:text-stone-300 dark:hover:text-white"
+                                className="ml-3 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center text-stone-600 transition hover:text-stone-950 md:hidden dark:text-stone-300 dark:hover:text-white"
                                 onClick={() => setMobileNavOpen(true)}
                                 aria-label="打开导航菜单"
                                 title="导航菜单"
@@ -59,12 +61,33 @@ export function AppTopNav() {
                                 {navItems.map((tool) => {
                                     const Icon = tool.icon;
                                     const active = tool.path === activePath;
+                                    const isAnnouncements = tool.id === "announcements";
+
+                                    if (isAnnouncements) {
+                                        return (
+                                            <button
+                                                key={tool.id}
+                                                type="button"
+                                                onClick={() => setAnnouncementsOpen(true)}
+                                                className={cn(
+                                                    "relative flex h-16 shrink-0 cursor-pointer items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
+                                                    active
+                                                        ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
+                                                        : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
+                                                )}
+                                            >
+                                                <Icon className="size-4" />
+                                                <span className="truncate">{tool.label}</span>
+                                            </button>
+                                        );
+                                    }
+
                                     return (
                                         <Link
                                             key={tool.id}
                                             href={tool.path}
                                             className={cn(
-                                                "relative flex h-16 shrink-0 items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
+                                                "relative flex h-16 shrink-0 cursor-pointer items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
                                                 active
                                                     ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
                                                     : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
@@ -85,8 +108,9 @@ export function AppTopNav() {
                 </header>
             ) : null}
 
-            <MobileNavDrawer open={mobileNavOpen} activePath={activePath} navItems={navItems} onClose={() => setMobileNavOpen(false)} />
+            <MobileNavDrawer open={mobileNavOpen} activePath={activePath} navItems={navItems} onClose={() => setMobileNavOpen(false)} onAnnouncementsClick={() => setAnnouncementsOpen(true)} />
             <AppConfigModal />
+            <AnnouncementsDialog open={announcementsOpen} onClose={() => setAnnouncementsOpen(false)} />
         </>
     );
 }

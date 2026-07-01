@@ -12,6 +12,36 @@ export type ChatCompletionMessage = {
     role: "system" | "user" | "assistant";
     content: string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
 };
+export type AiTextMessage = ChatCompletionMessage;
+
+export type ResponseToolCall = {
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+    thoughtSignature?: string;
+};
+
+export type ResponseInputMessage =
+    | AiTextMessage
+    | { type: "function_call"; call_id: string; name: string; arguments: string; thoughtSignature?: string }
+    | { role: "tool"; tool_call_id: string; content: string };
+
+export type ResponseFunctionTool = {
+    type: "function";
+    function: {
+        name: string;
+        description?: string;
+        parameters: Record<string, unknown>;
+        strict?: boolean;
+    };
+};
+
+export type ToolResponseResult = {
+    content: string;
+    toolCalls: ResponseToolCall[];
+};
+
+type ToolChoice = "auto" | "required" | { type: "function"; name: string };
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
@@ -19,6 +49,13 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type ToolChatResponse = {
+    choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }> } }>;
+    error?: { message?: string };
+    code?: number;
+    msg?: string;
+};
+type ToolChatCallPayload = { id?: string; type?: string; function?: { name?: string; arguments?: string } };
 
 const QUALITY_BASE: Record<string, number> = {
     low: 1024,
@@ -195,6 +232,48 @@ function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) 
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
 }
 
+function withResponseSystemMessage(config: AiConfig, messages: ResponseInputMessage[]) {
+    const systemPrompt = config.systemPrompt.trim();
+    return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
+}
+
+function toChatCompletionMessages(messages: ResponseInputMessage[]) {
+    return messages.map((message) => {
+        if ("type" in message) {
+            return {
+                role: "assistant",
+                content: "",
+                tool_calls: [
+                    {
+                        id: message.call_id,
+                        type: "function",
+                        function: { name: message.name, arguments: message.arguments },
+                    },
+                ],
+            };
+        }
+        if (message.role === "tool") return { role: "tool", tool_call_id: message.tool_call_id, content: message.content };
+        return message;
+    });
+}
+
+function toChatToolChoice(toolChoice: ToolChoice) {
+    return typeof toolChoice === "string" ? toolChoice : { type: "function", function: { name: toolChoice.name } };
+}
+
+function normalizeToolCalls(items: ToolChatCallPayload[] | undefined): ResponseToolCall[] {
+    return (Array.isArray(items) ? items : [])
+        .map((item) => ({
+            id: item.id || nanoid(),
+            type: "function" as const,
+            function: {
+                name: item.function?.name || "",
+                arguments: item.function?.arguments || "{}",
+            },
+        }))
+        .filter((item) => item.function.name);
+}
+
 export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
@@ -310,6 +389,33 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
     }
     refreshRemoteUser(config);
     return answer || "没有返回内容";
+}
+
+export async function requestToolResponse(config: AiConfig, messages: ResponseInputMessage[], tools: ResponseFunctionTool[], toolChoice: ToolChoice = "auto", onDelta?: (text: string) => void): Promise<ToolResponseResult> {
+    try {
+        const response = await axios.post<ToolChatResponse>(
+            aiApiUrl(config, "/chat/completions"),
+            {
+                model: config.model || config.textModel,
+                messages: toChatCompletionMessages(withResponseSystemMessage(config, messages)),
+                tools,
+                tool_choice: toChatToolChoice(toolChoice),
+                parallel_tool_calls: false,
+            },
+            {
+                headers: aiHeaders(config, "application/json"),
+            },
+        );
+        if (typeof response.data.code === "number" && response.data.code !== 0) throw new Error(response.data.msg || "请求失败");
+        if (response.data.error?.message) throw new Error(response.data.error.message);
+        const message = response.data.choices?.[0]?.message;
+        const content = message?.content || "";
+        if (content) onDelta?.(content);
+        refreshRemoteUser(config);
+        return { content, toolCalls: normalizeToolCalls(message?.tool_calls) };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "请求失败"));
+    }
 }
 
 export async function fetchImageModels(config: AiConfig) {

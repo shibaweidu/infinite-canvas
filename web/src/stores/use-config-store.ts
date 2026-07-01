@@ -43,11 +43,11 @@ export const defaultConfig: AiConfig = {
     channelMode: "local",
     baseUrl: "https://api.openai.com",
     apiKey: "",
-    model: "gpt-image-2",
-    imageModel: "gpt-image-2",
-    videoModel: "grok-imagine-video",
-    textModel: "gpt-5.5",
-    audioModel: "gpt-4o-mini-tts",
+    model: "",
+    imageModel: "",
+    videoModel: "",
+    textModel: "",
+    audioModel: "",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -67,6 +67,8 @@ export const defaultConfig: AiConfig = {
     count: "1",
     canvasImageCount: "3",
 };
+
+const legacyBuiltInLocalModels = new Set(["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"]);
 
 type ConfigStore = {
     config: AiConfig;
@@ -172,6 +174,23 @@ export function selectableModelsByCapability(config: AiConfig, capability?: Mode
     return config[modelListKey(capability)];
 }
 
+export function modelOptionName(value: string) {
+    const parts = value.split("||");
+    return (parts.length >= 3 ? parts[parts.length - 1] : value).trim();
+}
+
+export function normalizeModelOptionValue(value?: string) {
+    return (value || "").trim();
+}
+
+export function resolveModelChannel(config: AiConfig, value: string) {
+    return {
+        id: config.channelMode,
+        name: config.channelMode === "remote" ? "云端" : "本地直连",
+        model: modelOptionName(value),
+    };
+}
+
 function modelListKey(capability: ModelCapability) {
     return `${capability}Models` as "imageModels" | "videoModels" | "textModels" | "audioModels";
 }
@@ -215,15 +234,20 @@ export const useConfigStore = create<ConfigStore>()(
             merge: (persisted, current) => {
                 const persistedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig>;
                 const config = { ...defaultConfig, ...persistedConfig };
+                const imageModels = Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image");
+                const videoModels = Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video");
+                const textModels = Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text");
+                const audioModels = Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels) : filterModelsByCapability(config.models, "audio");
                 return {
                     ...current,
                     config: {
                         ...config,
                         channelMode: config.channelMode || "remote",
-                        imageModel: config.imageModel || config.model,
-                        videoModel: config.videoModel || "grok-imagine-video",
-                        textModel: config.textModel || config.model,
-                        audioModel: config.audioModel || defaultConfig.audioModel,
+                        model: clearLegacyBuiltInLocalModel(config.model, config.models),
+                        imageModel: clearLegacyBuiltInLocalModel(config.imageModel || config.model, imageModels.length ? imageModels : config.models),
+                        videoModel: clearLegacyBuiltInLocalModel(config.videoModel, videoModels.length ? videoModels : config.models),
+                        textModel: clearLegacyBuiltInLocalModel(config.textModel || config.model, textModels.length ? textModels : config.models),
+                        audioModel: clearLegacyBuiltInLocalModel(config.audioModel, audioModels.length ? audioModels : config.models),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
@@ -234,10 +258,10 @@ export const useConfigStore = create<ConfigStore>()(
                         videoWatermark: config.videoWatermark || "false",
                         quality: config.quality === "auto" ? "low" : config.quality || "low",
                         canvasImageCount: config.canvasImageCount || "3",
-                        imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image"),
-                        videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video"),
-                        textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text"),
-                        audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels) : filterModelsByCapability(config.models, "audio"),
+                        imageModels,
+                        videoModels,
+                        textModels,
+                        audioModels,
                     },
                 };
             },
@@ -247,6 +271,12 @@ export const useConfigStore = create<ConfigStore>()(
 
 function normalizeModelList(models: string[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
+}
+
+function clearLegacyBuiltInLocalModel(model: string, availableModels: string[]) {
+    const value = model.trim();
+    if (!legacyBuiltInLocalModels.has(value)) return value;
+    return normalizeModelList(availableModels).includes(value) ? value : "";
 }
 
 export function useEffectiveConfig() {

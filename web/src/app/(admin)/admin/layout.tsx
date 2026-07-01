@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiOutlined, AppstoreOutlined, CalculatorOutlined, FileTextOutlined, GlobalOutlined, HomeOutlined, LogoutOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { ApiOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, FileTextOutlined, GlobalOutlined, HomeOutlined, LogoutOutlined, PayCircleOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -14,6 +14,8 @@ import { useUserStore } from "@/stores/use-user-store";
 const adminMenus = [
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "积分日志" },
+    { key: "/admin/announcements", icon: <BellOutlined />, label: "公告管理" },
+    { key: "/admin/billing", icon: <PayCircleOutlined />, label: "套餐与积分" },
     { key: "/admin/model-providers", icon: <ApiOutlined />, label: "模型供应商" },
     { key: "/admin/model-credits", icon: <CalculatorOutlined />, label: "模型积分" },
     { key: "/admin/project-settings", icon: <AppstoreOutlined />, label: "故事设定" },

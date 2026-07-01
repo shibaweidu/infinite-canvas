@@ -25,6 +25,10 @@ func New() *gin.Engine {
 	api.GET("/auth/google/callback", gin.WrapF(handler.GoogleCallback))
 	api.GET("/auth/me", middleware.OptionalAuth, gin.WrapF(handler.CurrentUser))
 	api.GET("/settings", gin.WrapF(handler.Settings))
+	api.GET("/announcements", gin.WrapF(handler.Announcements))
+	api.GET("/announcements/:id", func(c *gin.Context) {
+		handler.Announcement(c.Writer, c.Request, c.Param("id"))
+	})
 	api.GET("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
@@ -35,17 +39,74 @@ func New() *gin.Engine {
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
+	v1.POST("/responses", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/responses")
+	})
 	v1.POST("/audio/speech", gin.WrapF(handler.AIAudioSpeech))
 	v1.POST("/videos", gin.WrapF(handler.AIVideos))
+	v1.POST("/v1/videos", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/v1/videos")
+	})
+	v1.POST("/video/generations", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/video/generations")
+	})
+	v1.POST("/v1/video/create", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/v1/video/create")
+	})
+	v1.POST("/video/create", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/video/create")
+	})
+	v1.POST("/v1/async/generations", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/v1/async/generations")
+	})
+	v1.POST("/async/generations", func(c *gin.Context) {
+		handler.AIProxyPost(c.Writer, c.Request, "/async/generations")
+	})
 	v1.POST("/media/references", gin.WrapF(handler.UploadReferenceMedia))
 	v1.GET("/videos/:id", func(c *gin.Context) {
 		handler.AIVideo(c.Writer, c.Request, c.Param("id"))
+	})
+	v1.GET("/v1/videos/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/videos/"+c.Param("id"))
+	})
+	v1.GET("/video/generations/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/video/generations/"+c.Param("id"))
+	})
+	v1.GET("/v1/video/generations/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/video/generations/"+c.Param("id"))
+	})
+	v1.GET("/video/tasks/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/video/tasks/"+c.Param("id"))
+	})
+	v1.GET("/v1/video/tasks/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/video/tasks/"+c.Param("id"))
+	})
+	v1.GET("/tasks/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/tasks/"+c.Param("id"))
+	})
+	v1.GET("/v1/tasks/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/tasks/"+c.Param("id"))
+	})
+	v1.GET("/v1/async/generations/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/async/generations/"+c.Param("id"))
+	})
+	v1.GET("/async/generations/:id", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/async/generations/"+c.Param("id"))
+	})
+	v1.GET("/video/query", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/video/query")
+	})
+	v1.GET("/v1/video/query", func(c *gin.Context) {
+		handler.AIProxyGet(c.Writer, c.Request, "/v1/video/query")
 	})
 	v1.GET("/videos/:id/content", func(c *gin.Context) {
 		handler.AIVideoContent(c.Writer, c.Request, c.Param("id"))
 	})
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
+	api.GET("/account/summary", middleware.UserAuth, gin.WrapF(handler.AccountSummary))
+	api.GET("/subscription-plans", gin.WrapF(handler.SubscriptionPlans))
+	api.GET("/credit-packages", gin.WrapF(handler.CreditPackages))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
@@ -61,6 +122,37 @@ func New() *gin.Engine {
 	admin.POST("/credit-logs", gin.WrapF(handler.AdminSaveCreditLog))
 	admin.DELETE("/credit-logs/:id", func(c *gin.Context) {
 		handler.AdminDeleteCreditLog(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/announcements", gin.WrapF(handler.AdminAnnouncements))
+	admin.POST("/announcements", gin.WrapF(handler.AdminSaveAnnouncement))
+	admin.POST("/announcements/images", gin.WrapF(handler.AdminUploadAnnouncementImage))
+	admin.DELETE("/announcements/:id", func(c *gin.Context) {
+		handler.AdminDeleteAnnouncement(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/subscription-plans", gin.WrapF(handler.AdminSubscriptionPlans))
+	admin.POST("/subscription-plans", gin.WrapF(handler.AdminSaveSubscriptionPlan))
+	admin.DELETE("/subscription-plans/:id", func(c *gin.Context) {
+		handler.AdminDeleteSubscriptionPlan(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/plans", gin.WrapF(handler.AdminSubscriptionPlans))
+	admin.POST("/plans", gin.WrapF(handler.AdminSaveSubscriptionPlan))
+	admin.DELETE("/plans/:id", func(c *gin.Context) {
+		handler.AdminDeleteSubscriptionPlan(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/billing/subscription-plans", gin.WrapF(handler.AdminSubscriptionPlans))
+	admin.POST("/billing/subscription-plans", gin.WrapF(handler.AdminSaveSubscriptionPlan))
+	admin.DELETE("/billing/subscription-plans/:id", func(c *gin.Context) {
+		handler.AdminDeleteSubscriptionPlan(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/credit-packages", gin.WrapF(handler.AdminCreditPackages))
+	admin.POST("/credit-packages", gin.WrapF(handler.AdminSaveCreditPackage))
+	admin.DELETE("/credit-packages/:id", func(c *gin.Context) {
+		handler.AdminDeleteCreditPackage(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/billing/credit-packages", gin.WrapF(handler.AdminCreditPackages))
+	admin.POST("/billing/credit-packages", gin.WrapF(handler.AdminSaveCreditPackage))
+	admin.DELETE("/billing/credit-packages/:id", func(c *gin.Context) {
+		handler.AdminDeleteCreditPackage(c.Writer, c.Request, c.Param("id"))
 	})
 	admin.GET("/settings", gin.WrapF(handler.AdminSettings))
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))

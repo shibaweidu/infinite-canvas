@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/basketikun/infinite-canvas/model"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -96,7 +97,7 @@ func SaveUser(user model.User) (model.User, error) {
 	return user, db.Save(&user).Error
 }
 
-func ConsumeUserCredits(id string, credits int, now string) (model.User, bool, error) {
+func GrantUserCreditBatch(id string, sourceType model.CreditBatchSource, sourceID string, credits int, expiresAt string, now string) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
@@ -105,35 +106,195 @@ func ConsumeUserCredits(id string, credits int, now string) (model.User, bool, e
 		user, ok, err := GetUserByID(id)
 		return user, ok, err
 	}
-	tx := db.Model(&model.User{}).Where("id = ? AND credits >= ?", id, credits).Updates(map[string]any{
-		"credits":    gorm.Expr("credits - ?", credits),
-		"updated_at": now,
+	var user model.User
+	err = db.Transaction(func(tx *gorm.DB) error {
+		ok, err := txUserByID(tx, id, &user)
+		if err != nil || !ok {
+			return err
+		}
+		if err := ensureUserCreditBatches(tx, user, now); err != nil {
+			return err
+		}
+		if err := expireUserCreditBatches(tx, id, now); err != nil {
+			return err
+		}
+		batch := model.CreditBatch{
+			ID:               newRepositoryID("batch"),
+			UserID:           id,
+			SourceType:       sourceType,
+			SourceID:         strings.TrimSpace(sourceID),
+			TotalCredits:     credits,
+			RemainingCredits: credits,
+			ExpiresAt:        strings.TrimSpace(expiresAt),
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		if err := tx.Create(&batch).Error; err != nil {
+			return err
+		}
+		return syncUserCredits(tx, id, now)
 	})
-	if tx.Error != nil {
-		return model.User{}, false, tx.Error
+	if err != nil {
+		return model.User{}, false, err
 	}
 	user, ok, err := GetUserByID(id)
-	return user, ok && tx.RowsAffected > 0, err
+	return user, ok, err
+}
+
+func ConsumeUserCredits(id string, credits int, now string) (model.User, []model.CreditBatchDeduction, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.User{}, nil, false, err
+	}
+	if credits <= 0 {
+		user, ok, err := GetUserByID(id)
+		return user, nil, ok, err
+	}
+	var deductions []model.CreditBatchDeduction
+	var user model.User
+	var ok bool
+	err = db.Transaction(func(tx *gorm.DB) error {
+		ok, err = txUserByID(tx, id, &user)
+		if err != nil || !ok {
+			return err
+		}
+		if err := ensureUserCreditBatches(tx, user, now); err != nil {
+			return err
+		}
+		if err := expireUserCreditBatches(tx, id, now); err != nil {
+			return err
+		}
+		total, err := sumUserRemainingCredits(tx, id)
+		if err != nil {
+			return err
+		}
+		if total < credits {
+			ok = false
+			return nil
+		}
+		var batches []model.CreditBatch
+		err = tx.
+			Where("user_id = ? AND remaining_credits > 0", id).
+			Order("case when expires_at = '' then 1 else 0 end asc").
+			Order("expires_at asc").
+			Order("created_at asc").
+			Find(&batches).Error
+		if err != nil {
+			return err
+		}
+		remain := credits
+		for _, batch := range batches {
+			if remain <= 0 {
+				break
+			}
+			amount := batch.RemainingCredits
+			if amount > remain {
+				amount = remain
+			}
+			nextRemaining := batch.RemainingCredits - amount
+			if err := tx.Model(&model.CreditBatch{}).Where("id = ?", batch.ID).Updates(map[string]any{
+				"remaining_credits": nextRemaining,
+				"updated_at":        now,
+			}).Error; err != nil {
+				return err
+			}
+			deductions = append(deductions, model.CreditBatchDeduction{BatchID: batch.ID, SourceType: batch.SourceType, Amount: amount, ExpiresAt: batch.ExpiresAt})
+			remain -= amount
+		}
+		return syncUserCredits(tx, id, now)
+	})
+	if err != nil {
+		return model.User{}, nil, false, err
+	}
+	if !ok {
+		return model.User{}, nil, false, nil
+	}
+	user, ok, err = GetUserByID(id)
+	return user, deductions, ok, err
 }
 
 func RefundUserCredits(id string, credits int, now string) (model.User, bool, error) {
+	return GrantUserCreditBatch(id, model.CreditBatchSourceRefund, "", credits, "", now)
+}
+
+func RefreshUserCredits(id string, now string) (model.User, bool, error) {
 	db, err := DB()
 	if err != nil {
 		return model.User{}, false, err
 	}
-	if credits <= 0 {
-		user, ok, err := GetUserByID(id)
+	var user model.User
+	var ok bool
+	err = db.Transaction(func(tx *gorm.DB) error {
+		ok, err = txUserByID(tx, id, &user)
+		if err != nil || !ok {
+			return err
+		}
+		if err := ensureUserCreditBatches(tx, user, now); err != nil {
+			return err
+		}
+		if err := expireUserCreditBatches(tx, id, now); err != nil {
+			return err
+		}
+		return syncUserCredits(tx, id, now)
+	})
+	if err != nil || !ok {
 		return user, ok, err
 	}
-	tx := db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{
-		"credits":    gorm.Expr("credits + ?", credits),
-		"updated_at": now,
-	})
-	if tx.Error != nil {
-		return model.User{}, false, tx.Error
+	user, ok, err = GetUserByID(id)
+	return user, ok, err
+}
+
+func txUserByID(tx *gorm.DB, id string, user *model.User) (bool, error) {
+	err := tx.Where("id = ?", id).First(user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
 	}
-	user, ok, err := GetUserByID(id)
-	return user, ok && tx.RowsAffected > 0, err
+	return err == nil, err
+}
+
+func newRepositoryID(prefix string) string {
+	return prefix + "-" + uuid.NewString()
+}
+
+func ensureUserCreditBatches(tx *gorm.DB, user model.User, now string) error {
+	if user.Credits <= 0 {
+		return nil
+	}
+	total, err := sumUserRemainingCredits(tx, user.ID)
+	if err != nil || total >= user.Credits {
+		return err
+	}
+	diff := user.Credits - total
+	return tx.Create(&model.CreditBatch{
+		ID:               newRepositoryID("batch"),
+		UserID:           user.ID,
+		SourceType:       model.CreditBatchSourceAdmin,
+		SourceID:         "legacy",
+		TotalCredits:     diff,
+		RemainingCredits: diff,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}).Error
+}
+
+func expireUserCreditBatches(tx *gorm.DB, userID string, now string) error {
+	return tx.Model(&model.CreditBatch{}).
+		Where("user_id = ? AND remaining_credits > 0 AND expires_at <> '' AND expires_at <= ?", userID, now).
+		Updates(map[string]any{"remaining_credits": 0, "updated_at": now}).Error
+}
+
+func sumUserRemainingCredits(tx *gorm.DB, userID string) (int, error) {
+	var total int
+	err := tx.Model(&model.CreditBatch{}).Where("user_id = ? AND remaining_credits > 0", userID).Select("coalesce(sum(remaining_credits), 0)").Scan(&total).Error
+	return total, err
+}
+
+func syncUserCredits(tx *gorm.DB, userID string, now string) error {
+	total, err := sumUserRemainingCredits(tx, userID)
+	if err != nil {
+		return err
+	}
+	return tx.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]any{"credits": total, "updated_at": now}).Error
 }
 
 // SaveCreditLog 保存积分变更流水。

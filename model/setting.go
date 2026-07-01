@@ -15,6 +15,7 @@ type ModelChannel struct {
 	Name       string      `json:"name"`
 	BaseURL    string      `json:"baseUrl"`
 	APIKey     string      `json:"apiKey"`
+	HasAPIKey  bool        `json:"hasApiKey"`
 	Models     []string    `json:"models"`
 	ModelItems []ModelItem `json:"modelItems"`
 	Weight     int         `json:"weight"`
@@ -72,6 +73,7 @@ type ModelCost struct {
 	Credits             int              `json:"credits"`
 	ResolutionCosts     []ResolutionCost `json:"resolutionCosts"`
 	SecondCredits       int              `json:"secondCredits"`
+	APIRoutes           []ModelAPIRoute  `json:"apiRoutes"`
 }
 
 // PublicModelChannelSetting 公开模型渠道配置。

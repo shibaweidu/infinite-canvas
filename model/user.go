@@ -82,7 +82,39 @@ const (
 	CreditLogTypeAdminAdjust CreditLogType = "admin_adjust"
 	CreditLogTypeAIConsume   CreditLogType = "ai_consume"
 	CreditLogTypeAIRefund    CreditLogType = "ai_refund"
+	CreditLogTypeRecharge    CreditLogType = "recharge"
+	CreditLogTypeSubscribe   CreditLogType = "subscribe"
 )
+
+type CreditBatchSource string
+
+const (
+	CreditBatchSourceSubscribe CreditBatchSource = "subscribe"
+	CreditBatchSourceRecharge  CreditBatchSource = "recharge"
+	CreditBatchSourceBonus     CreditBatchSource = "bonus"
+	CreditBatchSourceAdmin     CreditBatchSource = "admin"
+	CreditBatchSourceRefund    CreditBatchSource = "refund"
+)
+
+// CreditBatch 用户积分批次。订阅积分有过期时间，充值和赠送积分不设置过期时间。
+type CreditBatch struct {
+	ID               string            `json:"id" gorm:"primaryKey"`
+	UserID           string            `json:"userId" gorm:"index"`
+	SourceType       CreditBatchSource `json:"sourceType" gorm:"index"`
+	SourceID         string            `json:"sourceId" gorm:"index"`
+	TotalCredits     int               `json:"totalCredits"`
+	RemainingCredits int               `json:"remainingCredits" gorm:"index"`
+	ExpiresAt        string            `json:"expiresAt" gorm:"index"`
+	CreatedAt        string            `json:"createdAt"`
+	UpdatedAt        string            `json:"updatedAt"`
+}
+
+type CreditBatchDeduction struct {
+	BatchID    string            `json:"batchId"`
+	SourceType CreditBatchSource `json:"sourceType"`
+	Amount     int               `json:"amount"`
+	ExpiresAt  string            `json:"expiresAt"`
+}
 
 // CreditLog 用户积分变更流水。
 type CreditLog struct {

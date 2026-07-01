@@ -590,7 +590,6 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
     const isExpanded = Boolean(node.metadata?.textExpanded);
     const textMode = node.metadata?.textMode;
     const isScriptText = node.metadata?.textRole === "script";
-    const [isWritingInline, setIsWritingInline] = useState(textMode === "write" && !hasContent && !isScriptText);
     const textSurfaceStyle: React.CSSProperties = {
         fontSize: `${node.metadata?.fontSize || 14}px`,
         color: theme.node.text,
@@ -598,14 +597,6 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
         fontStyle: node.metadata?.textItalic ? "italic" : "normal",
         background: node.metadata?.textBackground || "transparent",
     };
-
-    useEffect(() => {
-        if (isScriptText) {
-            setIsWritingInline(false);
-            return;
-        }
-        if (textMode === "write" && !hasContent) setIsWritingInline(true);
-    }, [hasContent, isScriptText, textMode]);
 
     return (
         <div className="flex h-full w-full flex-col overflow-hidden pt-8">
@@ -647,22 +638,7 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 />
             ) : (
                 <>
-                    {textMode === "write" && !isLoading && !isScriptText && (!hasContent || isWritingInline) ? (
-                        <textarea
-                            autoFocus
-                            className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words rounded-[18px] border-none bg-transparent px-4 pb-4 pt-1 font-mono leading-relaxed outline-none appearance-none select-text"
-                            style={textSurfaceStyle}
-                            value={content}
-                            placeholder="在这里输入或粘贴文本内容"
-                            onChange={(event) => onContentChange(node.id, event.target.value)}
-                            onBlur={() => {
-                                if (content.trim()) setIsWritingInline(false);
-                            }}
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onWheel={(event) => event.stopPropagation()}
-                        />
-                    ) : hasContent || isLoading ? (
+                    {hasContent || isLoading ? (
                         <div
                             className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words rounded-[18px] bg-transparent pb-4 pl-4 pr-20 pt-0 font-mono leading-relaxed"
                             style={textSurfaceStyle}
@@ -673,6 +649,10 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                     ) : textMode === "write" && isScriptText && !hasContent ? (
                         <div className="pointer-events-none flex h-full w-full items-center justify-center px-6 text-center text-sm font-medium" style={{ color: theme.node.placeholder }}>
                             双击编辑剧本内容
+                        </div>
+                    ) : textMode === "write" && !isLoading ? (
+                        <div className="pointer-events-none flex h-full w-full items-start px-4 pt-1 font-mono text-sm leading-relaxed" style={{ color: theme.node.placeholder }}>
+                            在这里输入或粘贴文本内容
                         </div>
                     ) : textMode === "imagePrompt" || textMode === "videoPrompt" ? (
                         <TextModeBadge mode={textMode} theme={theme} />

@@ -137,6 +137,15 @@ func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
 			items = append(items, item)
 		}
 	}
+	existing := map[string]bool{}
+	for _, item := range items {
+		existing[item.ID] = true
+	}
+	for _, item := range defaults.Navigation {
+		if !existing[item.ID] {
+			items = append(items, item)
+		}
+	}
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].Sort < items[j].Sort
 	})
@@ -155,6 +164,7 @@ func defaultSiteSetting() model.SiteSetting {
 			{ID: "video", Label: "视频创作台", Path: "/video", Enabled: true, Sort: 30},
 			{ID: "prompts", Label: "提示词库", Path: "/prompts", Enabled: true, Sort: 40},
 			{ID: "assets", Label: "我的素材", Path: "/assets", Enabled: true, Sort: 50},
+			{ID: "announcements", Label: "公告", Path: "/announcements", Enabled: true, Sort: 60},
 		},
 	}
 }
@@ -319,7 +329,6 @@ func publicObjectStorageSetting(setting model.ObjectStorageSetting) model.Public
 
 func modelItemCost(item model.ModelItem, channel model.ModelChannel) model.ModelCost {
 	providerName := strings.TrimSpace(channel.Name)
-	providerEndpoint := normalizeModelChannelBaseURL(channel.BaseURL)
 	return normalizeModelCost(model.ModelCost{
 		Model:               publicModelID(channel, item),
 		UpstreamModel:       item.Model,
@@ -327,13 +336,14 @@ func modelItemCost(item model.ModelItem, channel model.ModelChannel) model.Model
 		Type:                item.Type,
 		ThumbnailURL:        item.ThumbnailURL,
 		ProviderName:        providerName,
-		ProviderEndpoint:    providerEndpoint,
+		ProviderEndpoint:    "",
 		ProviderDisplayName: firstNonEmpty(item.ProviderDisplayName, providerName),
 		Description:         item.Description,
 		Tags:                item.Tags,
 		Credits:             item.Credits,
 		ResolutionCosts:     item.ResolutionCosts,
 		SecondCredits:       item.SecondCredits,
+		APIRoutes:           item.APIRoutes,
 	})
 }
 
@@ -384,7 +394,6 @@ func joinUniqueLabels(values ...string) string {
 func publicModelID(channel model.ModelChannel, item model.ModelItem) string {
 	parts := []string{
 		strings.TrimSpace(channel.Name),
-		normalizeModelChannelBaseURL(channel.BaseURL),
 		strings.TrimSpace(item.Model),
 	}
 	return strings.Join(parts, "||")
@@ -506,6 +515,7 @@ func normalizeObjectStorageSetting(setting model.ObjectStorageSetting) model.Obj
 
 func hidePrivateAPIKeys(settings model.Settings) model.Settings {
 	for i := range settings.Private.Channels {
+		settings.Private.Channels[i].HasAPIKey = strings.TrimSpace(settings.Private.Channels[i].APIKey) != ""
 		settings.Private.Channels[i].APIKey = ""
 	}
 	settings.Private.Auth.Email.SMTPPassword = ""
@@ -579,6 +589,27 @@ func SelectModelChannelWithModel(modelName string) (model.ModelChannel, string, 
 		}
 	}
 	return channels[0], upstreamModelForSelection(channels[0], modelName), nil
+}
+
+func ModelAllowsAPIRoute(modelName string, path string) bool {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return false
+	}
+	channels := modelChannelsForModel(normalizePrivateSetting(settings.Private).Channels, modelName)
+	for _, channel := range channels {
+		for _, item := range channel.ModelItems {
+			if !modelItemMatchesSelection(channel, item, modelName) {
+				continue
+			}
+			for _, route := range item.APIRoutes {
+				if normalizeModelAPIRoutePath(route.Path) == normalizeModelAPIRoutePath(path) {
+					return route.Enabled
+				}
+			}
+		}
+	}
+	return false
 }
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
@@ -668,6 +699,7 @@ func normalizeModelChannel(channel model.ModelChannel) model.ModelChannel {
 		channel.ModelItems = items
 	}
 	channel.Models = enabledModelNames(channel.ModelItems)
+	channel.HasAPIKey = strings.TrimSpace(channel.APIKey) != "" || channel.HasAPIKey
 	if channel.Weight <= 0 {
 		channel.Weight = 1
 	}
@@ -702,9 +734,19 @@ func normalizeModelItem(item model.ModelItem) model.ModelItem {
 			item.ResolutionCosts[i].Credits = 0
 		}
 	}
-	routes := make([]model.ModelAPIRoute, 0, len(item.APIRoutes))
+	routes := make([]model.ModelAPIRoute, 0, len(defaultModelAPIRoutes(item.Type)))
+	enabledByPath := map[string]bool{}
 	for _, route := range item.APIRoutes {
+		path := normalizeModelAPIRoutePath(route.Path)
+		if path != "" {
+			enabledByPath[path] = route.Enabled
+		}
+	}
+	for _, route := range defaultModelAPIRoutes(item.Type) {
 		route.Path = strings.TrimSpace(route.Path)
+		if enabled, ok := enabledByPath[route.Path]; ok {
+			route.Enabled = enabled
+		}
 		if route.Path != "" {
 			routes = append(routes, route)
 		}
@@ -722,7 +764,7 @@ func normalizeModelCost(item model.ModelCost) model.ModelCost {
 	item.Name = strings.TrimSpace(item.Name)
 	item.ThumbnailURL = strings.TrimSpace(item.ThumbnailURL)
 	item.ProviderName = strings.TrimSpace(item.ProviderName)
-	item.ProviderEndpoint = normalizeModelChannelBaseURL(item.ProviderEndpoint)
+	item.ProviderEndpoint = ""
 	item.ProviderDisplayName = strings.TrimSpace(item.ProviderDisplayName)
 	item.Description = strings.TrimSpace(item.Description)
 	if item.Type == "" {
@@ -742,6 +784,54 @@ func normalizeModelCost(item model.ModelCost) model.ModelCost {
 		}
 	}
 	return item
+}
+
+func defaultModelAPIRoutes(modelType model.ModelType) []model.ModelAPIRoute {
+	switch modelType {
+	case model.ModelTypeImage:
+		return []model.ModelAPIRoute{
+			{Path: "/images/generations", Enabled: true},
+			{Path: "/images/edits"},
+			{Path: "/chat/completions"},
+			{Path: "/responses"},
+			{Path: "/v1/async/generations"},
+			{Path: "/v1/videos"},
+		}
+	case model.ModelTypeVideo:
+		return []model.ModelAPIRoute{
+			{Path: "/chat/completions"},
+			{Path: "/video/generations", Enabled: true},
+			{Path: "/v1/video/create"},
+			{Path: "/videos"},
+			{Path: "/v1/async/generations"},
+			{Path: "/async/generations"},
+			{Path: "/video/create"},
+		}
+	case model.ModelTypeAudio:
+		return []model.ModelAPIRoute{{Path: "/audio/speech", Enabled: true}}
+	default:
+		return []model.ModelAPIRoute{{Path: "/chat/completions", Enabled: true}}
+	}
+}
+
+func normalizeModelAPIRoutePath(path string) string {
+	path = strings.TrimSpace(path)
+	switch path {
+	case "/v1/chat/completions":
+		return "/chat/completions"
+	case "/v1/images/generations":
+		return "/images/generations"
+	case "/v1/images/edits":
+		return "/images/edits"
+	case "/v1/responses":
+		return "/responses"
+	case "/v1/audio/speech":
+		return "/audio/speech"
+	case "/v1/videos/generations", "/v1/video/generations":
+		return "/video/generations"
+	default:
+		return path
+	}
 }
 
 func enabledModelNames(items []model.ModelItem) []string {
@@ -1129,7 +1219,12 @@ func modelChannelsForModel(channels []model.ModelChannel, modelName string) []mo
 
 func modelItemMatchesSelection(channel model.ModelChannel, item model.ModelItem, modelName string) bool {
 	modelName = strings.TrimSpace(modelName)
-	return publicModelID(channel, item) == modelName || strings.TrimSpace(item.Model) == modelName
+	legacyParts := []string{
+		strings.TrimSpace(channel.Name),
+		normalizeModelChannelBaseURL(channel.BaseURL),
+		strings.TrimSpace(item.Model),
+	}
+	return publicModelID(channel, item) == modelName || strings.Join(legacyParts, "||") == modelName || strings.TrimSpace(item.Model) == modelName
 }
 
 func upstreamModelForSelection(channel model.ModelChannel, modelName string) string {
