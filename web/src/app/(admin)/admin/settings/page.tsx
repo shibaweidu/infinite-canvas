@@ -50,10 +50,9 @@ const emptySettings: AdminSettings = {
             slogan: "AI 创意工作台",
             navigation: [
                 { id: "canvas", label: "我的画布", path: "/canvas", enabled: true, sort: 10 },
-                { id: "image", label: "生图工作台", path: "/image", enabled: true, sort: 20 },
-                { id: "video", label: "视频创作台", path: "/video", enabled: true, sort: 30 },
-                { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 40 },
-                { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 50 },
+                { id: "workbench", label: "创作工作台", path: "/workbench", enabled: true, sort: 20 },
+                { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 30 },
+                { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 40 },
             ],
         },
     },
@@ -1153,16 +1152,17 @@ function normalizeNavPath(path: string) {
 }
 
 function normalizeProjectBriefSetting(setting: Partial<AdminSettings["public"]["projectBrief"]> = {}): AdminSettings["public"]["projectBrief"] {
+    const visualStyles = (setting.visualStyles || []).map((item) => ({
+        category: item.category?.trim() || "",
+        name: item.name?.trim() || "",
+        prompt: item.prompt?.trim() || "",
+        coverUrl: item.coverUrl?.trim() || "",
+        previewUrls: item.previewUrls || [],
+    })).filter((item) => item.name);
     return {
         genres: uniqueModels(setting.genres ? setting.genres : emptySettings.public.projectBrief.genres),
         styleCategories: uniqueModels(setting.styleCategories ? setting.styleCategories : emptySettings.public.projectBrief.styleCategories),
-        visualStyles: (setting.visualStyles || []).map((item) => ({
-            category: item.category?.trim() || "",
-            name: item.name?.trim() || "",
-            prompt: item.prompt?.trim() || "",
-            coverUrl: item.coverUrl?.trim() || "",
-            previewUrls: item.previewUrls || [],
-        })).filter((item) => item.name),
+        visualStyles,
         storyPresets: (setting.storyPresets || []).map((item) => ({ title: item.title?.trim() || "", text: item.text?.trim() || "" })).filter((item) => item.title && item.text),
     };
 }
@@ -1182,7 +1182,7 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
             description: item.description?.trim() || "",
             tags: uniqueModels(item.tags || []),
             credits: Math.max(0, Number(item.credits) || 0),
-            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0) })),
+            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0), enabled: cost.enabled !== false })),
             secondCredits: Math.max(0, Number(item.secondCredits) || 0),
             apiRoutes: item.apiRoutes || [],
         }));
@@ -1260,7 +1260,7 @@ function normalizeProviderModels(items: Array<Partial<AdminModelChannel["modelIt
             description: item.description?.trim() || "",
             tags: uniqueModels(item.tags || []),
             credits: Math.max(0, Number(item.credits) || 0),
-            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0) })),
+            resolutionCosts: (item.resolutionCosts || []).map((cost) => ({ resolution: cost.resolution || "", credits: Math.max(0, Number(cost.credits) || 0), enabled: cost.enabled !== false })),
             secondCredits: Math.max(0, Number(item.secondCredits) || 0),
             apiRoutes: normalizeModelApiRoutes(type, item.apiRoutes),
         };

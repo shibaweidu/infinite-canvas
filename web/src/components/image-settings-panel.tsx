@@ -1,10 +1,10 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ConfigProvider, Switch } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import type { AiConfig } from "@/stores/use-config-store";
+import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
     { value: "low", label: "1K" },
@@ -29,18 +29,34 @@ type ImageSettingsPanelProps = {
     onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
+    showCount?: boolean;
     className?: string;
     maxCount?: number;
     quickCount?: number;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, showCount = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
+    const modelCosts = useConfigStore((state) => state.publicSettings?.modelChannel.modelCosts);
+    const imageModel = (config.imageModel || config.model || "").trim();
+    const visibleResolutionOptions = useMemo(() => {
+        const cost = modelCosts?.find((item) => item.model === imageModel);
+        const enabledBuckets = cost?.resolutionCosts?.length ? new Set(cost.resolutionCosts.filter((item) => item.enabled !== false).map((item) => item.resolution.toLowerCase())) : null;
+        if (!enabledBuckets) return resolutionOptions;
+        const next = resolutionOptions.filter((item) => enabledBuckets.has(resolutionBucketFromQuality(item.value)));
+        return next.length ? next : resolutionOptions;
+    }, [imageModel, modelCosts]);
     const resolution = normalizeImageResolutionValue(config.quality);
+    const effectiveResolution = visibleResolutionOptions.some((item) => item.value === resolution) ? resolution : visibleResolutionOptions[0]?.value || "low";
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
-    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], resolution);
+    const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0], effectiveResolution);
+
+    useEffect(() => {
+        if (resolution !== effectiveResolution) onConfigChange("quality", effectiveResolution);
+    }, [effectiveResolution, onConfigChange, resolution]);
+
     const selectAspect = (value: string) => {
         const option = aspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.size || option?.value || "auto");
@@ -66,9 +82,9 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 {showTitle ? <div className="text-lg font-semibold">图像设置</div> : null}
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>分辨率</SettingTitle>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
+                    <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${visibleResolutionOptions.length}, minmax(0, 1fr))` }}>
+                        {visibleResolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={effectiveResolution === item.value} theme={theme} onClick={() => onConfigChange("quality", item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
@@ -81,14 +97,14 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
                                 16倍数对齐
                             </span>
-                            <span title="输入完成后自动向上补成 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
+                            <span title="输入完成后自动向上补齐为 16 的倍数" onMouseDown={(event) => event.stopPropagation()}>
                                 <Switch size="small" checked={snapDimensionToStep} onChange={setSnapDimensionToStep} />
                             </span>
                         </div>
                     </div>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
                         <DimensionInput prefix="W" value={dimensions.width} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("width", value)} />
-                        <span className="text-lg opacity-45">↔</span>
+                        <span className="text-lg opacity-45">x</span>
                         <DimensionInput prefix="H" value={dimensions.height} disabled={activeSize === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
                     </div>
                 </div>
@@ -110,17 +126,19 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </div>
-                <div className="space-y-2.5">
-                    <SettingTitle color={theme.node.muted}>生成张数</SettingTitle>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => (
-                            <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
-                                {value} 张
-                            </OptionPill>
-                        ))}
-                        <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
+                {showCount ? (
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>生成张数</SettingTitle>
+                        <div className="grid grid-cols-4 gap-2.5">
+                            {Array.from({ length: quickCount }, (_, index) => index + 1).map((value) => (
+                                <OptionPill key={value} selected={count === value} theme={theme} onClick={() => onConfigChange("count", String(value))}>
+                                    {value} 张
+                                </OptionPill>
+                            ))}
+                            <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
+                        </div>
                     </div>
-                </div>
+                ) : null}
             </div>
         </ImageSettingsTheme>
     );
@@ -235,6 +253,12 @@ function normalizeImageResolutionValue(value: string) {
     if (value === "4k") return "high";
     if (value === "2k") return "medium";
     return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
+function resolutionBucketFromQuality(value: string) {
+    if (value === "high") return "4k";
+    if (value === "medium") return "2k";
+    return "1k";
 }
 
 function imageResolutionHeight(value: string) {

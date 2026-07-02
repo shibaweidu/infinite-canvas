@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowUp, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Upload, Video } from "lucide-react";
 import { Button } from "antd";
 
+import { GenerationStylePicker } from "@/components/generation-style-picker";
 import { ModelPicker } from "@/components/model-picker";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
@@ -100,6 +101,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
     const textImages = imageReferences;
     const textVideos = upstreamInputs.map((input) => input.video).filter((video): video is NonNullable<NodeGenerationInput["video"]> => Boolean(video));
     const promptBoxHeight = promptExpanded ? promptExpandedClassName || (embedded ? "!h-[520px]" : "!h-56") : promptCollapsedClassName || "!h-24";
+    const panelWidthStyle = embedded ? undefined : { width: "max-content", minWidth: "min(560px, calc(100vw - 32px))", maxWidth: "calc(100vw - 32px)" };
 
     const setVideoRefMode = (next: CanvasVideoRefMode) => onConfigChange(node.id, { videoRefMode: next, videoReferences: clampVideoReferences(next, videoReferences) });
     const setVideoReferences = (next: string[]) => onConfigChange(node.id, { videoReferences: next });
@@ -148,7 +150,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
     return (
         <div
             className={embedded ? "thin-scrollbar flex max-h-full min-h-0 flex-col overflow-y-auto" : "rounded-2xl border p-3 shadow-2xl backdrop-blur"}
-            style={embedded ? { color: theme.node.text } : { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+            style={embedded ? { color: theme.node.text } : { ...panelWidthStyle, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
@@ -205,7 +207,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
                     onChange={updatePrompt}
                     onSubmit={submit}
                     containerClassName={promptBoxHeight}
-                    className="thin-scrollbar h-full w-full resize-none rounded-xl border py-2 pl-3 pr-10 text-sm leading-5 outline-none appearance-none select-text"
+                    className="thin-scrollbar h-full w-full min-w-[536px] resize-none rounded-xl border py-2 pl-3 pr-10 text-sm leading-5 outline-none appearance-none select-text"
                     style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}
                     placeholder={promptPlaceholder(mode, hasImageContent, hasTextContent, textMode)}
                 />
@@ -223,12 +225,13 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
                 </button>
             </div>
 
-            <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+            <div className="mt-2 flex min-w-max flex-nowrap items-center justify-between gap-2">
+                <div className="flex min-w-max flex-nowrap items-center gap-2">
                     <CanvasPromptLibrary onSelect={updatePrompt} />
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
+                            <GenerationStylePicker value={node.metadata?.styleName || ""} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
@@ -241,6 +244,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
+                            <GenerationStylePicker value={node.metadata?.styleName || ""} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
                             <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (

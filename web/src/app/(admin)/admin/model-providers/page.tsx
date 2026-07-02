@@ -9,7 +9,7 @@ import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, type AdminMo
 import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
-import { defaultProviderModel, mergeApiKeys, modelApiRouteLabels, modelApiRoutes, modelTypeLabels, normalizeChannel, normalizeProviderModel, normalizeSettings, syncPublicModelChannel, unique } from "../model-management";
+import { defaultProviderModel, imageCreditResolutions, mergeApiKeys, modelApiRouteLabels, modelApiRoutes, modelTypeLabels, normalizeChannel, normalizeProviderModel, normalizeSettings, setResolutionEnabled, syncPublicModelChannel, unique } from "../model-management";
 
 type PageView = "providers" | "routing";
 type ModelEditorTarget = { providerIndex: number; model: string };
@@ -594,6 +594,29 @@ function ModelEditModal({
                             placeholder="每行一个标签，也可用逗号分隔"
                         />
                     </Field>
+
+                    {model.type === "image" ? (
+                        <div>
+                            <div className="mb-2 text-sm font-medium text-white">分辨率启用</div>
+                            <div className="grid gap-2 sm:grid-cols-3">
+                                {imageCreditResolutions.map((option) => {
+                                    const current = model.resolutionCosts.find((item) => item.resolution === option.resolution);
+                                    const enabled = current?.enabled !== false;
+                                    return (
+                                        <button
+                                            key={option.resolution}
+                                            type="button"
+                                            onClick={() => onChange({ resolutionCosts: setResolutionEnabled(model.resolutionCosts, option.resolution, !enabled) })}
+                                            className={`${enabled ? "border-white/45 bg-white/[0.10] text-white" : "border-white/[0.08] bg-[#1b1f29] text-[#8f97aa] hover:bg-white/[0.06]"} rounded-xl border px-3 py-3 text-left text-sm transition`}
+                                        >
+                                            <div className="font-semibold">{option.resolution.toUpperCase()}</div>
+                                            <div className="mt-1 text-xs opacity-75">{enabled ? "已启用" : "已关闭"}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div>
                         <div className="mb-2 text-sm font-medium text-white">接口选择</div>

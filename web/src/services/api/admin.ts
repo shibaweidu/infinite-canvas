@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import axios from "axios";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import type { HomeCategory, HomeSlide, HomeTag, HomeWork, HomeWorkListResponse, HomeWorkQuery } from "@/services/api/home";
 
 export type AdminPromptCategory = {
     category: string;
@@ -120,6 +121,21 @@ export type AdminCreditPackage = {
     updatedAt: string;
 };
 
+export type AdminPaymentSettings = {
+    enabled: boolean;
+    provider: "epay";
+    gatewayUrl: string;
+    pid: string;
+    key?: string;
+    hasKey?: boolean;
+    siteName: string;
+    payType: string;
+    notifyUrl: string;
+    returnUrl: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type AdminUserQuery = {
     keyword?: string;
     page?: number;
@@ -166,6 +182,56 @@ export async function deleteAdminAnnouncement(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/announcements/${encodeURIComponent(id)}`, token);
 }
 
+export type AdminHomeWorkQuery = HomeWorkQuery & { status?: string };
+
+export async function fetchAdminHomeSlides(token: string) {
+    return apiGet<HomeSlide[]>("/api/admin/home/slides", undefined, token);
+}
+
+export async function saveAdminHomeSlide(token: string, item: Partial<HomeSlide>) {
+    return apiPost<HomeSlide>("/api/admin/home/slides", item, token);
+}
+
+export async function deleteAdminHomeSlide(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/home/slides/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminHomeWorks(token: string, query: AdminHomeWorkQuery = {}) {
+    return apiGet<HomeWorkListResponse>("/api/admin/home/works", compactApiParams(query), token);
+}
+
+export async function saveAdminHomeWork(token: string, item: Partial<HomeWork>) {
+    return apiPost<HomeWork>("/api/admin/home/works", item, token);
+}
+
+export async function deleteAdminHomeWork(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/home/works/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminHomeCategories(token: string) {
+    return apiGet<HomeCategory[]>("/api/admin/home/categories", undefined, token);
+}
+
+export async function saveAdminHomeCategory(token: string, item: Partial<HomeCategory>) {
+    return apiPost<HomeCategory>("/api/admin/home/categories", item, token);
+}
+
+export async function deleteAdminHomeCategory(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/home/categories/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminHomeTags(token: string) {
+    return apiGet<HomeTag[]>("/api/admin/home/tags", undefined, token);
+}
+
+export async function saveAdminHomeTag(token: string, item: Partial<HomeTag>) {
+    return apiPost<HomeTag>("/api/admin/home/tags", item, token);
+}
+
+export async function deleteAdminHomeTag(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/home/tags/${encodeURIComponent(id)}`, token);
+}
+
 export async function uploadAdminAnnouncementImage(token: string, file: File) {
     const body = new FormData();
     body.append("file", file, file.name);
@@ -198,6 +264,14 @@ export async function saveAdminCreditPackage(token: string, item: Partial<AdminC
 
 export async function deleteAdminCreditPackage(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/billing/credit-packages/${encodeURIComponent(id)}`, token);
+}
+
+export async function fetchAdminPaymentSettings(token: string) {
+    return apiGet<AdminPaymentSettings>("/api/admin/payment/settings", undefined, token);
+}
+
+export async function saveAdminPaymentSettings(token: string, item: Partial<AdminPaymentSettings>) {
+    return apiPost<AdminPaymentSettings>("/api/admin/payment/settings", item, token);
 }
 
 export async function fetchAdminPromptCategories(token: string) {
@@ -290,6 +364,7 @@ export type AdminModelType = "text" | "image" | "video" | "audio";
 export type AdminResolutionCost = {
     resolution: string;
     credits: number;
+    enabled?: boolean;
 };
 
 export type AdminModelApiRoute = {

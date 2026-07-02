@@ -9,13 +9,16 @@ import { useEffect } from "react";
 
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { adminLayoutStyle } from "@/lib/app-theme";
+import { useConfigStore } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const adminMenus = [
     { key: "/admin/users", icon: <UserOutlined />, label: "用户管理" },
     { key: "/admin/credit-logs", icon: <TransactionOutlined />, label: "积分日志" },
     { key: "/admin/announcements", icon: <BellOutlined />, label: "公告管理" },
+    { key: "/admin/home", icon: <HomeOutlined />, label: "首页内容" },
     { key: "/admin/billing", icon: <PayCircleOutlined />, label: "套餐与积分" },
+    { key: "/admin/payment-settings", icon: <PayCircleOutlined />, label: "支付设置" },
     { key: "/admin/model-providers", icon: <ApiOutlined />, label: "模型供应商" },
     { key: "/admin/model-credits", icon: <CalculatorOutlined />, label: "模型积分" },
     { key: "/admin/project-settings", icon: <AppstoreOutlined />, label: "故事设定" },
@@ -33,9 +36,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     const user = useUserStore((state) => state.user);
     const isReady = useUserStore((state) => state.isReady);
     const logout = useUserStore((state) => state.clearSession);
+    const site = useConfigStore((state) => state.publicSettings?.site);
     const activeMenu = adminMenus.find((item) => pathname.startsWith(item.key));
     const activeKey = activeMenu?.key || "";
     const pageTitle = activeMenu?.label === "素材库" ? "素材库管理" : activeMenu?.label || "用户管理";
+    const logoUrl = site?.logoUrl || "/logo.svg";
+    const siteName = site?.name || "无限画布";
 
     useEffect(() => {
         if (!isReady) return;
@@ -60,9 +66,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         <Layout hasSider style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgLayout }}>
             <Layout.Sider width={adminLayoutStyle.siderWidth} style={{ height: "100vh", overflow: "hidden", background: antToken.colorBgContainer, borderRight: `1px solid ${antToken.colorBorder}` }}>
                 <Flex align="center" gap={12} style={{ height: adminLayoutStyle.brandHeight, padding: "0 20px", borderBottom: `1px solid ${antToken.colorBorderSecondary}` }}>
-                    <span aria-hidden style={{ display: "inline-block", width: 30, height: 30, background: antToken.colorText, WebkitMask: "url(/logo.svg) center / contain no-repeat", mask: "url(/logo.svg) center / contain no-repeat" }} />
+                    <img src={logoUrl} alt="" style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 6 }} />
                     <Typography.Text strong style={{ fontSize: 18, letterSpacing: 0 }}>
-                        无限画布
+                        {siteName}
                     </Typography.Text>
                 </Flex>
                 <Menu

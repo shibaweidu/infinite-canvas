@@ -3,7 +3,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { useEffect, useState } from "react";
 import { Avatar, Dropdown, Tooltip } from "antd";
-import { Bell, BookOpen, Keyboard, LogOut, Settings2, Shield, UserRound, WalletCards } from "lucide-react";
+import { Bell, Keyboard, LogOut, Settings2, Shield, UserRound, WalletCards } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
@@ -11,7 +11,6 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { AccountDialog } from "@/components/dialogs/account-dialog";
 import { AnnouncementsDialog } from "@/components/dialogs/announcements-dialog";
 import { CreditSymbol } from "@/constant/credits";
-import { DOCS_URL } from "@/constant/env";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { fetchAccountSummary } from "@/services/api/auth";
 import { useConfigStore } from "@/stores/use-config-store";
@@ -70,9 +69,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     return (
         <>
             <div className="inline-flex shrink-0 items-center gap-2">
-                <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
-                    <BookOpen className="size-4" />
-                </a>
                 {showConfig ? (
                     <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
                         <Settings2 className="size-4" />

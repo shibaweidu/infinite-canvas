@@ -28,6 +28,12 @@ description: 当前后端主要数据表与字段说明
 - `announcements`
 - `subscription_plans`
 - `credit_packages`
+- `payment_settings`
+- `payment_orders`
+- `home_slides`
+- `home_works`
+- `home_categories`
+- `home_tags`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -111,6 +117,74 @@ description: 当前后端主要数据表与字段说明
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
+### home_slides
+
+首页幻灯片表。用于后台发布首页顶部轮播内容。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `title` | string | 标题 |
+| `subtitle` | text | 副标题 |
+| `cover_url` | string | 幻灯片封面 |
+| `link_url` | string | 自定义跳转链接 |
+| `work_id` | string | 关联作品 ID |
+| `enabled` | bool | 是否前台显示 |
+| `sort` | number | 排序值 |
+| `published_at` | string | 发布时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### home_works
+
+首页作品表。用于后台生成或手动维护作品，发布后展示到首页和作品详情页。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `title` | string | 作品标题 |
+| `description` | text | 作品信息 |
+| `type` | string | 作品类型：`image`、`video` |
+| `cover_url` | string | 封面图 |
+| `media_url` | string | 大图或视频地址 |
+| `prompt` | text | 提示词 |
+| `model` | string | 生成模型 |
+| `category` | string | 作品分类 |
+| `tags` | json | 标签列表 |
+| `status` | string | 状态：`draft`、`pending`、`published`、`hidden` |
+| `allow_same_style` | bool | 是否允许做同款 |
+| `show_prompt` | bool | 是否展示提示词 |
+| `sort` | number | 排序值 |
+| `published_at` | string | 发布时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### home_categories
+
+首页作品分类表。用于后台自定义首页作品筛选分类。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 分类名称 |
+| `enabled` | bool | 是否前台显示 |
+| `sort` | number | 排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### home_tags
+
+首页作品标签表。用于后台自定义作品标签，发布作品时可多选。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `name` | string | 标签名称 |
+| `enabled` | bool | 是否启用 |
+| `sort` | number | 排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
 ### subscription_plans
 
 订阅套餐表。用于后台维护前台展示的订阅套餐和积分规则。
@@ -154,6 +228,46 @@ description: 当前后端主要数据表与字段说明
 | `benefits` | json | 前台权益列表，字段为 `text` 和 `tag` |
 | `enabled` | bool | 是否启用 |
 | `sort` | number | 排序值 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### payment_settings
+
+支付配置表。当前用于后台维护易支付商户配置，密钥只保存在后端，不会在管理端回显明文。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `provider` | string | 主键，当前固定为 `epay` |
+| `enabled` | bool | 是否启用支付 |
+| `gateway_url` | string | 易支付网关地址 |
+| `pid` | string | 商户 ID |
+| `key` | string | 商户密钥 |
+| `site_name` | string | 收银台站点名称 |
+| `pay_type` | string | 默认支付方式，如 `alipay`、`wxpay`、`qqpay` |
+| `notify_url` | string | 异步通知地址，可为空 |
+| `return_url` | string | 同步返回地址，可为空 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### payment_orders
+
+支付订单表。用于记录用户购买订阅套餐或积分充值包的下单、支付和到账状态，并作为支付回调幂等依据。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `type` | string | 订单类型：`subscription`、`credit` |
+| `item_id` | string | 关联套餐或充值包 ID |
+| `item_name` | string | 支付项目名称 |
+| `amount` | number | 支付金额，单位为分 |
+| `credits` | number | 基础到账积分 |
+| `bonus_credits` | number | 额外赠送积分 |
+| `duration_days` | number | 订阅积分有效天数，充值订单为 0 |
+| `status` | string | 订单状态：`pending`、`paid`、`closed` |
+| `provider` | string | 支付通道，当前固定为 `epay` |
+| `provider_trade` | string | 第三方支付流水号 |
+| `paid_at` | string | 支付成功时间 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
@@ -222,7 +336,7 @@ description: 当前后端主要数据表与字段说明
 | `description` | string | 模型描述 |
 | `tags` | string[] | 模型标签 |
 | `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
-| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费和前台启用状态，字段为 `resolution`、`credits` 和 `enabled` |
 | `secondCredits` | number | 视频模型每秒扣除的积分 |
 
 `auth.linuxDo` 当前字段：
@@ -293,7 +407,7 @@ description: 当前后端主要数据表与字段说明
 | `description` | string | 模型描述 |
 | `tags` | string[] | 模型标签 |
 | `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
-| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费和前台启用状态，字段为 `resolution`、`credits` 和 `enabled` |
 | `secondCredits` | number | 视频模型每秒扣除的积分 |
 | `apiRoutes` | object[] | API 路由选项，字段为 `path` 和 `enabled` |
 

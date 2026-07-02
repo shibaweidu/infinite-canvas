@@ -73,6 +73,12 @@ func DB() (*gorm.DB, error) {
 			&model.Announcement{},
 			&model.SubscriptionPlan{},
 			&model.CreditPackage{},
+			&model.PaymentSettings{},
+			&model.PaymentOrder{},
+			&model.HomeSlide{},
+			&model.HomeWork{},
+			&model.HomeCategory{},
+			&model.HomeTag{},
 		)
 	})
 	return db, dbErr

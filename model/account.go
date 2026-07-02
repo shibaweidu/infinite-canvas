@@ -56,6 +56,65 @@ type CreditPackage struct {
 	UpdatedAt      string           `json:"updatedAt"`
 }
 
+type PaymentProvider string
+
+const (
+	PaymentProviderEPay PaymentProvider = "epay"
+)
+
+type PaymentSettings struct {
+	Enabled      bool            `json:"enabled"`
+	Provider     PaymentProvider `json:"provider" gorm:"primaryKey"`
+	GatewayURL   string          `json:"gatewayUrl"`
+	PID          string          `json:"pid"`
+	Key          string          `json:"key,omitempty"`
+	HasKey       bool            `json:"hasKey,omitempty" gorm:"-"`
+	SiteName     string          `json:"siteName"`
+	PayType      string          `json:"payType"`
+	NotifyURL    string          `json:"notifyUrl"`
+	ReturnURL    string          `json:"returnUrl"`
+	CreatedAt    string          `json:"createdAt"`
+	UpdatedAt    string          `json:"updatedAt"`
+}
+
+type PaymentOrderStatus string
+
+const (
+	PaymentOrderStatusPending PaymentOrderStatus = "pending"
+	PaymentOrderStatusPaid    PaymentOrderStatus = "paid"
+	PaymentOrderStatusClosed  PaymentOrderStatus = "closed"
+)
+
+type PaymentOrderType string
+
+const (
+	PaymentOrderTypeSubscription PaymentOrderType = "subscription"
+	PaymentOrderTypeCredit       PaymentOrderType = "credit"
+)
+
+type PaymentOrder struct {
+	ID            string             `json:"id" gorm:"primaryKey"`
+	UserID        string             `json:"userId" gorm:"index"`
+	Type          PaymentOrderType   `json:"type" gorm:"index"`
+	ItemID        string             `json:"itemId" gorm:"index"`
+	ItemName      string             `json:"itemName"`
+	Amount        int                `json:"amount"`
+	Credits       int                `json:"credits"`
+	BonusCredits  int                `json:"bonusCredits"`
+	DurationDays  int                `json:"durationDays"`
+	Status        PaymentOrderStatus `json:"status" gorm:"index"`
+	Provider      PaymentProvider    `json:"provider"`
+	ProviderTrade string             `json:"providerTrade"`
+	PaidAt        string             `json:"paidAt"`
+	CreatedAt     string             `json:"createdAt"`
+	UpdatedAt     string             `json:"updatedAt"`
+}
+
+type PaymentCreateResult struct {
+	Order  PaymentOrder `json:"order"`
+	PayURL string       `json:"payUrl"`
+}
+
 type BillingBenefit struct {
 	Text string `json:"text"`
 	Tag  string `json:"tag"`

@@ -13,7 +13,7 @@ export type ModelCreditCost = {
     model: string;
     type?: "text" | "image" | "video";
     credits: number;
-    resolutionCosts?: { resolution: string; credits: number }[];
+    resolutionCosts?: { resolution: string; credits: number; enabled?: boolean }[];
     secondCredits?: number;
 };
 
@@ -34,7 +34,7 @@ export function requestCreditCost(options: { channelMode: string; modelCosts?: M
     if (mode === "image") {
         const size = options.resolution || options.size || "auto";
         const bucket = imageResolutionBucket(size);
-        const resolutionCost = cost.resolutionCosts?.find((item) => item.resolution === size || item.resolution.toLowerCase() === bucket)?.credits;
+        const resolutionCost = cost.resolutionCosts?.find((item) => item.enabled !== false && (item.resolution === size || item.resolution.toLowerCase() === bucket))?.credits;
         return (resolutionCost ?? cost.credits ?? 0) * count;
     }
     return (cost.credits || 0) * count;

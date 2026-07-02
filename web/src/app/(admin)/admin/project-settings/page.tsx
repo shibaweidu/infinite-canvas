@@ -329,10 +329,11 @@ function Tag({ label, onDelete }: { label: string; onDelete: () => void }) {
 }
 
 function normalizeProjectBriefSettings(settings?: Partial<AdminProjectBriefSettings>): AdminProjectBriefSettings {
+    const visualStyles = (settings?.visualStyles ? settings.visualStyles : defaultProjectBriefSettings.visualStyles).map(normalizeStyle).filter((item) => item.name);
     return {
         genres: unique(settings?.genres ? settings.genres : defaultProjectBriefSettings.genres),
         styleCategories: unique(settings?.styleCategories ? settings.styleCategories : defaultProjectBriefSettings.styleCategories),
-        visualStyles: (settings?.visualStyles ? settings.visualStyles : defaultProjectBriefSettings.visualStyles).map(normalizeStyle).filter((item) => item.name),
+        visualStyles,
         storyPresets: (settings?.storyPresets ? settings.storyPresets : defaultProjectBriefSettings.storyPresets).map(normalizeStory).filter((item) => item.title && item.text),
     };
 }

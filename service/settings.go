@@ -123,10 +123,17 @@ func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
 		return setting
 	}
 	items := make([]model.SiteNavigationItem, 0, len(setting.Navigation))
+	hasWorkbench := false
 	for index, item := range setting.Navigation {
 		item.ID = strings.TrimSpace(item.ID)
 		item.Label = strings.TrimSpace(item.Label)
 		item.Path = strings.TrimSpace(item.Path)
+		if item.ID == "workbench" || item.Path == "/workbench" {
+			hasWorkbench = true
+		}
+		if item.ID == "image" || item.ID == "video" || item.Path == "/image" || item.Path == "/video" {
+			continue
+		}
 		if item.ID == "" {
 			item.ID = fmt.Sprintf("nav-%d", index+1)
 		}
@@ -142,6 +149,9 @@ func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
 		existing[item.ID] = true
 	}
 	for _, item := range defaults.Navigation {
+		if item.ID == "workbench" && hasWorkbench {
+			continue
+		}
 		if !existing[item.ID] {
 			items = append(items, item)
 		}
@@ -160,11 +170,10 @@ func defaultSiteSetting() model.SiteSetting {
 		Slogan:  "AI 创意工作台",
 		Navigation: []model.SiteNavigationItem{
 			{ID: "canvas", Label: "我的画布", Path: "/canvas", Enabled: true, Sort: 10},
-			{ID: "image", Label: "生图工作台", Path: "/image", Enabled: true, Sort: 20},
-			{ID: "video", Label: "视频创作台", Path: "/video", Enabled: true, Sort: 30},
-			{ID: "prompts", Label: "提示词库", Path: "/prompts", Enabled: true, Sort: 40},
-			{ID: "assets", Label: "我的素材", Path: "/assets", Enabled: true, Sort: 50},
-			{ID: "announcements", Label: "公告", Path: "/announcements", Enabled: true, Sort: 60},
+			{ID: "workbench", Label: "创作工作台", Path: "/workbench", Enabled: true, Sort: 20},
+			{ID: "prompts", Label: "提示词库", Path: "/prompts", Enabled: true, Sort: 30},
+			{ID: "assets", Label: "我的素材", Path: "/assets", Enabled: true, Sort: 40},
+			{ID: "announcements", Label: "公告", Path: "/announcements", Enabled: true, Sort: 50},
 		},
 	}
 }
@@ -733,6 +742,10 @@ func normalizeModelItem(item model.ModelItem) model.ModelItem {
 		if item.ResolutionCosts[i].Credits < 0 {
 			item.ResolutionCosts[i].Credits = 0
 		}
+		if item.ResolutionCosts[i].Enabled == nil {
+			enabled := true
+			item.ResolutionCosts[i].Enabled = &enabled
+		}
 	}
 	routes := make([]model.ModelAPIRoute, 0, len(defaultModelAPIRoutes(item.Type)))
 	enabledByPath := map[string]bool{}
@@ -781,6 +794,10 @@ func normalizeModelCost(item model.ModelCost) model.ModelCost {
 		item.ResolutionCosts[i].Resolution = strings.TrimSpace(item.ResolutionCosts[i].Resolution)
 		if item.ResolutionCosts[i].Credits < 0 {
 			item.ResolutionCosts[i].Credits = 0
+		}
+		if item.ResolutionCosts[i].Enabled == nil {
+			enabled := true
+			item.ResolutionCosts[i].Enabled = &enabled
 		}
 	}
 	return item
@@ -897,6 +914,9 @@ func findModelCost(items []model.ModelCost, modelName string) (model.ModelCost, 
 func modelResolutionCredits(item model.ModelCost, resolution string) int {
 	bucket := imageResolutionBucket(resolution)
 	for _, cost := range item.ResolutionCosts {
+		if cost.Enabled != nil && !*cost.Enabled {
+			continue
+		}
 		value := strings.TrimSpace(cost.Resolution)
 		if strings.EqualFold(value, resolution) || strings.EqualFold(value, bucket) {
 			return cost.Credits

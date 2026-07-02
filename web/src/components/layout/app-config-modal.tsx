@@ -3,6 +3,7 @@
 import { App, Button, Form, Input, Modal, Segmented, Select } from "antd";
 import { useState } from "react";
 
+import { GenerationStylePicker } from "@/components/generation-style-picker";
 import { ModelPicker } from "@/components/model-picker";
 import { fetchImageModels } from "@/services/api/image";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
@@ -182,6 +183,9 @@ export function AppConfigModal() {
                         ))}
                     </div>
                     <div className="grid gap-4 md:grid-cols-4">
+                        <Form.Item label="默认风格" className="mb-4">
+                            <GenerationStylePicker value={config.defaultStyleName} onChange={(value) => updateConfig("defaultStyleName", value)} compact className="inline-flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-stone-300 px-3 text-sm transition hover:opacity-85 dark:border-stone-700" />
+                        </Form.Item>
                         <Form.Item label="画布默认生图张数" extra="新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。" className="mb-4">
                             <Input
                                 type="number"

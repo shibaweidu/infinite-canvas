@@ -150,6 +150,62 @@ func DeleteCreditPackage(id string) error {
 	return db.Delete(&model.CreditPackage{}, "id = ?", id).Error
 }
 
+func GetPaymentSettings(provider model.PaymentProvider) (model.PaymentSettings, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.PaymentSettings{}, false, err
+	}
+	var item model.PaymentSettings
+	err = db.Where("provider = ?", provider).First(&item).Error
+	if err != nil {
+		return item, false, ignoreAccountNotFound(err)
+	}
+	return item, true, nil
+}
+
+func SavePaymentSettings(item model.PaymentSettings) (model.PaymentSettings, error) {
+	db, err := DB()
+	if err != nil {
+		return item, err
+	}
+	return item, db.Save(&item).Error
+}
+
+func SavePaymentOrder(item model.PaymentOrder) (model.PaymentOrder, error) {
+	db, err := DB()
+	if err != nil {
+		return item, err
+	}
+	return item, db.Save(&item).Error
+}
+
+func GetPaymentOrder(id string) (model.PaymentOrder, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.PaymentOrder{}, false, err
+	}
+	var item model.PaymentOrder
+	err = db.Where("id = ?", id).First(&item).Error
+	if err != nil {
+		return item, false, ignoreAccountNotFound(err)
+	}
+	return item, true, nil
+}
+
+func MarkPaymentOrderPaid(id string, providerTrade string, paidAt string) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	result := db.Model(&model.PaymentOrder{}).Where("id = ? AND status = ?", id, model.PaymentOrderStatusPending).Updates(map[string]any{
+		"status":         model.PaymentOrderStatusPaid,
+		"provider_trade": providerTrade,
+		"paid_at":        paidAt,
+		"updated_at":     paidAt,
+	})
+	return result.RowsAffected > 0, result.Error
+}
+
 func ListUserCreditLogs(userID string, types []model.CreditLogType, limit int) ([]model.CreditLog, error) {
 	db, err := DB()
 	if err != nil {

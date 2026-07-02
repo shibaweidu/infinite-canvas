@@ -47,9 +47,10 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
     const allowLocal = publicSettings?.modelChannel.allowCustomChannel !== false;
     const pickerType = modelType || capability;
     const cloudModels = useMemo(() => buildCloudModels(publicSettings?.modelChannel.modelCosts || [], publicSettings?.modelChannel.availableModels || config.models, pickerType), [publicSettings, config.models, pickerType]);
-    const localModels = useMemo(() => (allowLocal ? buildLocalModels(rawConfig.models, config.channelMode === "local" ? value : "", pickerType) : []), [allowLocal, rawConfig.models, config.channelMode, value, pickerType]);
+    const localModels = useMemo(() => (allowLocal ? buildLocalModels(rawConfig.models, pickerType) : []), [allowLocal, rawConfig.models, pickerType]);
     const current = value || "";
     const currentMeta = cloudModels.find((item) => item.model === current) || localModels.find((item) => item.model === current);
+    const displayName = currentMeta ? displayModelName(currentMeta, current) : "";
 
     useEffect(() => {
         if (!open) return;
@@ -111,10 +112,10 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
                 }}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={displayModelName(currentMeta, current) || placeholder}
+                title={displayName || placeholder}
             >
                 <ModelAvatar model={currentMeta} fallback={current} compact />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{displayModelName(currentMeta, current) || placeholder}</span>
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{displayName || placeholder}</span>
                 <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
             </button>
 
@@ -233,6 +234,7 @@ function ModelAvatar({ model, fallback, selected = false, compact = false }: { m
     const icon = model?.thumbnailUrl || resolveModelIcon(fallback);
     if (compact) {
         if (icon) return <img src={icon} alt="" className={cn("size-4 shrink-0 rounded-md object-contain", !model?.thumbnailUrl && "dark:invert")} />;
+        if (!fallback.trim()) return null;
         return <Cpu className="size-4 shrink-0 opacity-70" />;
     }
     return (
@@ -261,8 +263,8 @@ function buildCloudModels(costs: AdminModelCost[], availableModels: string[], mo
         }));
 }
 
-function buildLocalModels(models: string[], current: string, modelType?: AdminModelType) {
-    return Array.from(new Set([current, ...models].map((item) => item.trim()).filter(Boolean)))
+function buildLocalModels(models: string[], modelType?: AdminModelType) {
+    return Array.from(new Set(models.map((item) => item.trim()).filter(Boolean)))
         .filter((model) => !modelType || inferModelType(model) === modelType)
         .map((model) => ({ model, type: inferModelType(model) }));
 }

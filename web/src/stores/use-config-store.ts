@@ -34,6 +34,7 @@ export type AiConfig = {
     size: string;
     count: string;
     canvasImageCount: string;
+    defaultStyleName: string;
 };
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
@@ -66,6 +67,7 @@ export const defaultConfig: AiConfig = {
     size: "1:1",
     count: "1",
     canvasImageCount: "3",
+    defaultStyleName: "",
 };
 
 const legacyBuiltInLocalModels = new Set(["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"]);
@@ -258,6 +260,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoWatermark: config.videoWatermark || "false",
                         quality: config.quality === "auto" ? "low" : config.quality || "low",
                         canvasImageCount: config.canvasImageCount || "3",
+                        defaultStyleName: config.defaultStyleName || "",
                         imageModels,
                         videoModels,
                         textModels,

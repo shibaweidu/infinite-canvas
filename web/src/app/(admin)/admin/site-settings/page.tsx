@@ -20,11 +20,10 @@ const defaultSite: AdminSiteSettings = {
     slogan: "AI 创意工作台",
     navigation: [
         { id: "canvas", label: "我的画布", path: "/canvas", enabled: true, sort: 10 },
-        { id: "image", label: "生图工作台", path: "/image", enabled: true, sort: 20 },
-        { id: "video", label: "视频创作台", path: "/video", enabled: true, sort: 30 },
-        { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 40 },
-        { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 50 },
-        { id: "announcements", label: "公告", path: "/announcements", enabled: true, sort: 60 },
+        { id: "workbench", label: "创作工作台", path: "/workbench", enabled: true, sort: 20 },
+        { id: "prompts", label: "提示词库", path: "/prompts", enabled: true, sort: 30 },
+        { id: "assets", label: "我的素材", path: "/assets", enabled: true, sort: 40 },
+        { id: "announcements", label: "公告", path: "/announcements", enabled: true, sort: 50 },
     ],
 };
 

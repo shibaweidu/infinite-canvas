@@ -20,7 +20,7 @@ description: settings 表中 public 和 private 配置结构说明
     "availableModels": ["gpt-5.5", "gpt-image-2"],
     "modelCosts": [
       { "model": "gpt-5.5", "type": "text", "credits": 1 },
-      { "model": "gpt-image-2", "type": "image", "credits": 10, "resolutionCosts": [{ "resolution": "1024x1024", "credits": 10 }] }
+      { "model": "gpt-image-2", "type": "image", "credits": 10, "resolutionCosts": [{ "resolution": "1k", "credits": 10, "enabled": true }] }
     ],
     "defaultModel": "gpt-image-2",
     "defaultImageModel": "gpt-image-2",
@@ -94,7 +94,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `description` | string | 模型描述 |
 | `tags` | string[] | 模型标签 |
 | `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
-| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费和前台启用状态，字段为 `resolution`、`credits` 和 `enabled` |
 | `secondCredits` | number | 视频模型每秒扣除的积分 |
 
 用户侧请求模式：
@@ -250,7 +250,7 @@ description: settings 表中 public 和 private 配置结构说明
 | `description` | string | 模型描述 |
 | `tags` | string[] | 模型标签 |
 | `credits` | number | 文本模型每次调用扣除；图片/视频模型未命中细分规则时作为兜底 |
-| `resolutionCosts` | object[] | 图片模型按分辨率扣费，字段为 `resolution` 和 `credits` |
+| `resolutionCosts` | object[] | 图片模型按分辨率扣费和前台启用状态，字段为 `resolution`、`credits` 和 `enabled` |
 | `secondCredits` | number | 视频模型每秒扣除的积分 |
 | `apiRoutes` | object[] | API 路由选项，字段为 `path` 和 `enabled` |
 

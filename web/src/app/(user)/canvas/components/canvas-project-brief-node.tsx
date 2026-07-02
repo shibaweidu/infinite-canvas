@@ -20,7 +20,7 @@ type ProjectBriefNodeContentProps = {
     fullscreen?: boolean;
 };
 
-type StyleLibraryItem = {
+export type StyleLibraryItem = {
     name: string;
     category: string;
     prompt: string;
@@ -239,6 +239,7 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
             </div>
             <StyleLibraryModal
                 open={styleOpen}
+                theme={theme}
                 selectedStyle={brief.visualStyle}
                 category={styleCategory}
                 categories={styleCategories}
@@ -259,8 +260,9 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
     );
 }
 
-function StyleLibraryModal({
+export function StyleLibraryModal({
     open,
+    theme,
     selectedStyle,
     category,
     categories,
@@ -271,6 +273,7 @@ function StyleLibraryModal({
     onUpload,
 }: {
     open: boolean;
+    theme?: Theme;
     selectedStyle: string;
     category: string;
     categories: string[];
@@ -278,23 +281,24 @@ function StyleLibraryModal({
     onCategoryChange: (category: string) => void;
     onClose: () => void;
     onSelect: (style: StyleLibraryItem) => void;
-    onUpload: (url: string) => void;
+    onUpload?: (url: string) => void;
 }) {
     if (!open || typeof document === "undefined") return null;
+    const modalTheme = theme || canvasThemes.dark;
 
     return createPortal(
-        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/55 p-4 md:p-6" onMouseDown={onClose} onWheel={(event) => event.stopPropagation()}>
-            <div className="mx-auto flex h-full max-h-[900px] w-full max-w-[1440px] flex-col overflow-hidden rounded-[18px] bg-[#232425] shadow-[0_30px_100px_rgba(0,0,0,0.65)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/35 p-4 md:p-6" onMouseDown={onClose} onWheel={(event) => event.stopPropagation()}>
+            <div className="mx-auto flex h-full max-h-[900px] w-full max-w-[1440px] flex-col overflow-hidden rounded-[18px] border shadow-[0_30px_100px_rgba(0,0,0,0.28)]" style={{ background: modalTheme.toolbar.panel, borderColor: modalTheme.toolbar.border, color: modalTheme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                 <div className="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
-                    <h3 className="text-lg font-semibold text-white md:text-xl">风格库</h3>
-                    <button type="button" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/15" onClick={onClose} aria-label="关闭风格库">
+                    <h3 className="text-lg font-semibold md:text-xl" style={{ color: modalTheme.node.text }}>风格库</h3>
+                    <button type="button" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition hover:opacity-85" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }} onClick={onClose} aria-label="关闭风格库">
                         <X className="h-4 w-4" />
                     </button>
                 </div>
-                <div className="border-b border-white/[0.06] px-4 pb-3 md:px-6 md:pb-4">
+                <div className="border-b px-4 pb-3 md:px-6 md:pb-4" style={{ borderColor: modalTheme.toolbar.border }}>
                     <div className="thin-scrollbar flex gap-2 overflow-x-auto pb-1">
                         {categories.map((item) => (
-                            <button key={item} type="button" className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${category === item ? "bg-white" : "bg-white/[0.06] text-[#cfd6e2] hover:bg-white/[0.10] hover:text-white"}`} style={category === item ? { color: "#111315" } : undefined} onClick={() => onCategoryChange(item)}>
+                            <button key={item} type="button" className="shrink-0 cursor-pointer rounded-full px-4 py-2 text-sm transition hover:opacity-85" style={category === item ? { background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText } : { background: modalTheme.node.fill, color: modalTheme.node.text }} onClick={() => onCategoryChange(item)}>
                                 {item}
                             </button>
                         ))}
@@ -302,12 +306,12 @@ function StyleLibraryModal({
                 </div>
                 <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
-                        <StyleUploadCard onSelect={onUpload} />
+                        {onUpload ? <StyleUploadCard theme={modalTheme} onSelect={onUpload} /> : null}
                         {styles.map((style) => (
-                            <button key={style.name} type="button" className={`group overflow-hidden rounded-2xl border bg-[#15171b] text-left shadow-[0_18px_42px_rgba(0,0,0,0.32)] transition ${selectedStyle === style.name ? "border-white" : "border-white/[0.08] hover:border-white/[0.18]"}`} onClick={() => onSelect(style)}>
-                                <div className="relative aspect-[9/16] overflow-hidden bg-[#111318]">
-                                    {style.isNew ? <span className="absolute left-2 top-2 z-10 rounded-full bg-white px-3 py-1 text-xs font-semibold text-black">New</span> : null}
-                                    {style.image ? <img alt={style.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" src={style.image} /> : <div className="flex h-full w-full items-center justify-center px-3 text-center text-sm text-[#929aa8]">{style.name}</div>}
+                            <button key={style.name} type="button" className="group cursor-pointer overflow-hidden rounded-2xl border text-left shadow-[0_18px_42px_rgba(0,0,0,0.16)] transition hover:opacity-95" style={{ background: modalTheme.node.panel, borderColor: selectedStyle === style.name ? modalTheme.node.activeStroke : modalTheme.node.stroke }} onClick={() => onSelect(style)}>
+                                <div className="relative aspect-[9/16] overflow-hidden" style={{ background: modalTheme.node.fill }}>
+                                    {style.isNew ? <span className="absolute left-2 top-2 z-10 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }}>New</span> : null}
+                                    {style.image ? <img alt={style.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" src={style.image} /> : <div className="flex h-full w-full items-center justify-center px-3 text-center text-sm" style={{ color: modalTheme.node.muted }}>{style.name}</div>}
                                     {style.previews?.length ? (
                                         <div className="absolute bottom-3 right-3 flex shrink-0 -space-x-2">
                                             {style.previews.map((preview) => (
@@ -317,7 +321,7 @@ function StyleLibraryModal({
                                     ) : null}
                                 </div>
                                 <div className="px-3 py-2">
-                                    <div className="truncate text-sm font-semibold text-white">{style.name}</div>
+                                    <div className="truncate text-sm font-semibold" style={{ color: modalTheme.node.text }}>{style.name}</div>
                                 </div>
                             </button>
                         ))}
@@ -329,9 +333,9 @@ function StyleLibraryModal({
     );
 }
 
-function StyleUploadCard({ onSelect }: { onSelect: (url: string) => void }) {
+function StyleUploadCard({ theme, onSelect }: { theme: Theme; onSelect: (url: string) => void }) {
     return (
-        <label className="flex aspect-[9/16] min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.12] bg-[#2b2d30] text-[#929aa8] transition hover:border-white/35 hover:bg-[#303339] hover:text-white md:min-h-[220px]">
+        <label className="flex aspect-[9/16] min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition hover:opacity-85 md:min-h-[220px]" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.muted }}>
             <Upload className="h-9 w-9" />
             <span className="mt-3 text-sm">上传风格图片</span>
             <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleStyleUpload(event.currentTarget.files?.[0], onSelect)} />
@@ -397,7 +401,7 @@ function normalizeProjectBrief(brief: CanvasProjectBrief | undefined, settings: 
     };
 }
 
-function normalizeProjectBriefSettings(settings?: Partial<AdminProjectBriefSettings>): ProjectBriefSettings {
+export function normalizeProjectBriefSettings(settings?: Partial<AdminProjectBriefSettings>): ProjectBriefSettings {
     const visualStyles = (settings?.visualStyles ? settings.visualStyles : defaultProjectBriefSettings.visualStyles)
         .map((item) => ({
             name: item.name?.trim() || "",

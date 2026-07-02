@@ -30,9 +30,9 @@ export const modelApiRouteLabels: Record<string, string> = {
 };
 
 export const defaultImageCosts: AdminResolutionCost[] = [
-    { resolution: "1k", credits: 10 },
-    { resolution: "2k", credits: 20 },
-    { resolution: "4k", credits: 40 },
+    { resolution: "1k", credits: 10, enabled: true },
+    { resolution: "2k", credits: 20, enabled: true },
+    { resolution: "4k", credits: 40, enabled: true },
 ];
 
 export const modelApiRoutes: Record<AdminModelType, AdminModelApiRoute[]> = {
@@ -58,9 +58,9 @@ export const modelApiRoutes: Record<AdminModelType, AdminModelApiRoute[]> = {
 };
 
 export const imageCreditResolutions: AdminResolutionCost[] = [
-    { resolution: "1k", credits: 10 },
-    { resolution: "2k", credits: 20 },
-    { resolution: "4k", credits: 40 },
+    { resolution: "1k", credits: 10, enabled: true },
+    { resolution: "2k", credits: 20, enabled: true },
+    { resolution: "4k", credits: 40, enabled: true },
 ];
 
 export function normalizeSettings(settings: AdminSettings): AdminSettings {
@@ -137,7 +137,7 @@ export function normalizeProviderModel(item: Partial<AdminProviderModel>): Admin
         description: item.description?.trim() || "",
         tags: unique(item.tags || []),
         credits: nonNegativeNumber(item.credits, defaultCredits),
-        resolutionCosts: type === "image" ? (item.resolutionCosts?.length ? item.resolutionCosts.map((cost) => ({ resolution: cost.resolution, credits: nonNegativeNumber(cost.credits, 0) })) : defaultImageCosts) : [],
+        resolutionCosts: type === "image" ? normalizeResolutionCosts(item.resolutionCosts) : [],
         secondCredits: type === "video" ? nonNegativeNumber(item.secondCredits, 5) : 0,
         apiRoutes: normalizeModelApiRoutes(type, item.apiRoutes),
     };
@@ -204,8 +204,24 @@ function normalizeEndpoint(value: string) {
 
 export function setResolutionCost(items: AdminResolutionCost[], resolution: string, credits: number) {
     const next = items.filter((item) => item.resolution !== resolution);
-    next.push({ resolution, credits });
+    next.push({ resolution, credits, enabled: items.find((item) => item.resolution === resolution)?.enabled !== false });
     return next;
+}
+
+export function setResolutionEnabled(items: AdminResolutionCost[], resolution: string, enabled: boolean) {
+    return normalizeResolutionCosts(items).map((item) => (item.resolution === resolution ? { ...item, enabled } : item));
+}
+
+export function normalizeResolutionCosts(items: Partial<AdminResolutionCost>[] | undefined) {
+    const existing = new Map((items || []).map((item) => [item.resolution?.toLowerCase(), item]));
+    return defaultImageCosts.map((fallback) => {
+        const item = existing.get(fallback.resolution);
+        return {
+            resolution: fallback.resolution,
+            credits: nonNegativeNumber(item?.credits, fallback.credits),
+            enabled: item?.enabled !== false,
+        };
+    });
 }
 
 export function updateModelInChannels(channels: AdminModelChannel[], model: string, patch: Partial<AdminProviderModel>) {

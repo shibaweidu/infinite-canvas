@@ -29,6 +29,9 @@ export function AppTopNav() {
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const navItems = resolveNavItems(site?.navigation);
     const activePath = navItems.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))?.path;
+    const announcementsIndex = navItems.findIndex((item) => item.id === "announcements" || item.path === "/announcements");
+    const leftNavItems = announcementsIndex >= 0 ? navItems.slice(0, announcementsIndex) : navItems;
+    const rightNavItems = announcementsIndex >= 0 ? navItems.slice(announcementsIndex) : [];
     const logoUrl = site?.logoUrl || "/logo.svg";
     const siteName = site?.name || "无限画布";
     const slogan = site?.slogan || "";
@@ -37,8 +40,8 @@ export function AppTopNav() {
         <>
             {!hideHeader ? (
                 <header className="sticky top-0 z-20 h-16 shrink-0 border-b border-stone-200 bg-background/90 backdrop-blur-xl dark:border-stone-800">
-                    <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
-                        <div className="flex min-w-0 items-center">
+                    <div className="flex h-full w-full items-stretch justify-between gap-5 px-6">
+                        <div className="flex min-w-0 flex-1 items-center">
                             <Link href="/" className="flex h-full shrink-0 cursor-pointer items-center gap-2.5 text-left text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                                 <img src={logoUrl} alt="" className="size-6 shrink-0 object-contain" />
                                 <span className="inline-flex min-w-0 items-baseline gap-2 text-left">
@@ -58,29 +61,9 @@ export function AppTopNav() {
                             </button>
 
                             <nav className="hide-scrollbar ml-8 hidden h-16 min-w-0 items-center gap-7 overflow-x-auto md:flex">
-                                {navItems.map((tool) => {
+                                {leftNavItems.map((tool) => {
                                     const Icon = tool.icon;
                                     const active = tool.path === activePath;
-                                    const isAnnouncements = tool.id === "announcements";
-
-                                    if (isAnnouncements) {
-                                        return (
-                                            <button
-                                                key={tool.id}
-                                                type="button"
-                                                onClick={() => setAnnouncementsOpen(true)}
-                                                className={cn(
-                                                    "relative flex h-16 shrink-0 cursor-pointer items-center gap-2 text-sm leading-6 transition after:absolute after:inset-x-0 after:bottom-0 after:h-px",
-                                                    active
-                                                        ? "font-medium text-stone-950 after:bg-stone-950 dark:text-stone-100 dark:after:bg-stone-100"
-                                                        : "text-stone-500 after:bg-transparent hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
-                                                )}
-                                            >
-                                                <Icon className="size-4" />
-                                                <span className="truncate">{tool.label}</span>
-                                            </button>
-                                        );
-                                    }
 
                                     return (
                                         <Link
@@ -101,7 +84,43 @@ export function AppTopNav() {
                             </nav>
                         </div>
 
-                        <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
+                        <div className="my-auto flex h-9 min-w-0 shrink-0 items-center justify-end gap-5 justify-self-end whitespace-nowrap">
+                            <nav className="hidden h-9 items-center gap-5 md:flex">
+                                {rightNavItems.map((tool) => {
+                                    const Icon = tool.icon;
+                                    const active = tool.path === activePath;
+                                    const isAnnouncements = tool.id === "announcements";
+                                    if (isAnnouncements) {
+                                        return (
+                                            <button
+                                                key={tool.id}
+                                                type="button"
+                                                onClick={() => setAnnouncementsOpen(true)}
+                                                className={cn(
+                                                    "inline-flex h-9 cursor-pointer items-center gap-2 text-sm transition",
+                                                    active ? "font-medium text-stone-950 dark:text-stone-100" : "text-stone-500 hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
+                                                )}
+                                            >
+                                                <Icon className="size-4" />
+                                                <span className="truncate">{tool.label}</span>
+                                            </button>
+                                        );
+                                    }
+                                    return (
+                                        <Link
+                                            key={tool.id}
+                                            href={tool.path}
+                                            className={cn(
+                                                "inline-flex h-9 cursor-pointer items-center gap-2 text-sm transition",
+                                                active ? "font-medium text-stone-950 dark:text-stone-100" : "text-stone-500 hover:text-stone-950 dark:text-stone-400 dark:hover:text-stone-100",
+                                            )}
+                                        >
+                                            <Icon className="size-4" />
+                                            <span className="truncate">{tool.label}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </nav>
                             <UserStatusActions />
                         </div>
                     </div>

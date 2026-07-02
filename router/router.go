@@ -29,6 +29,11 @@ func New() *gin.Engine {
 	api.GET("/announcements/:id", func(c *gin.Context) {
 		handler.Announcement(c.Writer, c.Request, c.Param("id"))
 	})
+	api.GET("/home/slides", gin.WrapF(handler.HomeSlides))
+	api.GET("/home/works", gin.WrapF(handler.HomeWorks))
+	api.GET("/home/works/:id", func(c *gin.Context) {
+		handler.HomeWork(c.Writer, c.Request, c.Param("id"))
+	})
 	api.GET("/media/references/:id", func(c *gin.Context) {
 		handler.ReferenceMedia(c.Writer, c.Request, c.Param("id"))
 	})
@@ -105,6 +110,10 @@ func New() *gin.Engine {
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.GET("/account/summary", middleware.UserAuth, gin.WrapF(handler.AccountSummary))
+	api.POST("/payment/orders", middleware.UserAuth, gin.WrapF(handler.CreatePaymentOrder))
+	api.GET("/payment/epay/notify", gin.WrapF(handler.EPayNotify))
+	api.POST("/payment/epay/notify", gin.WrapF(handler.EPayNotify))
+	api.GET("/payment/epay/return", gin.WrapF(handler.EPayReturn))
 	api.GET("/subscription-plans", gin.WrapF(handler.SubscriptionPlans))
 	api.GET("/credit-packages", gin.WrapF(handler.CreditPackages))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
@@ -128,6 +137,26 @@ func New() *gin.Engine {
 	admin.POST("/announcements/images", gin.WrapF(handler.AdminUploadAnnouncementImage))
 	admin.DELETE("/announcements/:id", func(c *gin.Context) {
 		handler.AdminDeleteAnnouncement(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/home/slides", gin.WrapF(handler.AdminHomeSlides))
+	admin.POST("/home/slides", gin.WrapF(handler.AdminSaveHomeSlide))
+	admin.DELETE("/home/slides/:id", func(c *gin.Context) {
+		handler.AdminDeleteHomeSlide(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/home/works", gin.WrapF(handler.AdminHomeWorks))
+	admin.POST("/home/works", gin.WrapF(handler.AdminSaveHomeWork))
+	admin.DELETE("/home/works/:id", func(c *gin.Context) {
+		handler.AdminDeleteHomeWork(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/home/categories", gin.WrapF(handler.AdminHomeCategories))
+	admin.POST("/home/categories", gin.WrapF(handler.AdminSaveHomeCategory))
+	admin.DELETE("/home/categories/:id", func(c *gin.Context) {
+		handler.AdminDeleteHomeCategory(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.GET("/home/tags", gin.WrapF(handler.AdminHomeTags))
+	admin.POST("/home/tags", gin.WrapF(handler.AdminSaveHomeTag))
+	admin.DELETE("/home/tags/:id", func(c *gin.Context) {
+		handler.AdminDeleteHomeTag(c.Writer, c.Request, c.Param("id"))
 	})
 	admin.GET("/subscription-plans", gin.WrapF(handler.AdminSubscriptionPlans))
 	admin.POST("/subscription-plans", gin.WrapF(handler.AdminSaveSubscriptionPlan))
@@ -154,6 +183,8 @@ func New() *gin.Engine {
 	admin.DELETE("/billing/credit-packages/:id", func(c *gin.Context) {
 		handler.AdminDeleteCreditPackage(c.Writer, c.Request, c.Param("id"))
 	})
+	admin.GET("/payment/settings", gin.WrapF(handler.AdminPaymentSettings))
+	admin.POST("/payment/settings", gin.WrapF(handler.AdminSavePaymentSettings))
 	admin.GET("/settings", gin.WrapF(handler.AdminSettings))
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))
 	admin.POST("/settings/channel-models", gin.WrapF(handler.AdminChannelModels))

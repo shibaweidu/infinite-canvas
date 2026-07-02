@@ -12,6 +12,11 @@ import (
 
 const announcementImageMaxBytes = 10 << 20
 
+type paymentOrderRequest struct {
+	Type   model.PaymentOrderType `json:"type"`
+	ItemID string                 `json:"itemId"`
+}
+
 func Announcements(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListAnnouncements(parseQuery(r), false)
 	if err != nil {
@@ -60,6 +65,43 @@ func CreditPackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, result)
+}
+
+func CreatePaymentOrder(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	var payload paymentOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		Fail(w, "请求参数错误")
+		return
+	}
+	result, err := service.CreatePaymentOrder(user, payload.Type, payload.ItemID, r)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func EPayNotify(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	if err := service.HandleEPayNotify(r.Form); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("fail"))
+		return
+	}
+	_, _ = w.Write([]byte("success"))
+}
+
+func EPayReturn(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, service.PaymentReturnURL(r), http.StatusFound)
 }
 
 func AdminAnnouncements(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +204,29 @@ func AdminDeleteSubscriptionPlan(w http.ResponseWriter, r *http.Request, id stri
 
 func AdminCreditPackages(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListCreditPackages(true)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminPaymentSettings(w http.ResponseWriter, r *http.Request) {
+	result, err := service.GetPaymentSettings()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminSavePaymentSettings(w http.ResponseWriter, r *http.Request) {
+	var item model.PaymentSettings
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		Fail(w, "请求参数错误")
+		return
+	}
+	result, err := service.SavePaymentSettings(item)
 	if err != nil {
 		FailError(w, err)
 		return

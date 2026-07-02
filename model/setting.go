@@ -36,6 +36,7 @@ const (
 type ResolutionCost struct {
 	Resolution string `json:"resolution"`
 	Credits    int    `json:"credits"`
+	Enabled    *bool  `json:"enabled"`
 }
 
 type ModelAPIRoute struct {

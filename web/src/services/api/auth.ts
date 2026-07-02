@@ -83,6 +83,31 @@ export type AccountSummary = {
     consumeRecords: AccountCreditLog[];
 };
 
+export type PaymentOrderType = "subscription" | "credit";
+
+export type PaymentOrder = {
+    id: string;
+    userId: string;
+    type: PaymentOrderType;
+    itemId: string;
+    itemName: string;
+    amount: number;
+    credits: number;
+    bonusCredits: number;
+    durationDays: number;
+    status: "pending" | "paid" | "closed";
+    provider: "epay";
+    providerTrade: string;
+    paidAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type PaymentCreateResult = {
+    order: PaymentOrder;
+    payUrl: string;
+};
+
 export type AuthPayload = {
     username: string;
     email?: string;
@@ -108,4 +133,8 @@ export async function fetchCurrentUser(token?: string) {
 
 export async function fetchAccountSummary(token: string) {
     return apiGet<AccountSummary>("/api/account/summary", undefined, token);
+}
+
+export async function createPaymentOrder(token: string, type: PaymentOrderType, itemId: string) {
+    return apiPost<PaymentCreateResult>("/api/payment/orders", { type, itemId }, token);
 }

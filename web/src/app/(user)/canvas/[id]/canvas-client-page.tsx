@@ -3,16 +3,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, BookOpen, Bot, ChevronDown, Clapperboard, ClipboardList, Copy, Grid2x2, Group, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Save, ScrollText, Settings2, Trash2, Undo2, Upload, UsersRound, Video, X } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, Clapperboard, ClipboardList, Copy, Grid2x2, Group, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Save, ScrollText, Settings2, Trash2, Undo2, Upload, UsersRound, Video, X } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
-import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { applyGenerationStylePrompt, findGenerationStyle, prependStyleReference } from "@/lib/generation-style";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -80,6 +80,7 @@ import {
     type ViewportTransform,
 } from "../types";
 import type { ReferenceImage } from "@/types/image";
+import type { AdminProjectVisualStyle } from "@/services/api/admin";
 import type { ReferenceAudio } from "@/types/media";
 
 type CanvasClipboard = {
@@ -88,9 +89,11 @@ type CanvasClipboard = {
 };
 
 type PendingConnectionCreate = {
-    connection: ConnectionHandle;
+    connection?: ConnectionHandle;
     position: Position;
 };
+
+type ConnectionCreateNodeType = CanvasNodeType | "script";
 
 type ConnectionDropTarget = {
     nodeId: string | null;
@@ -114,6 +117,7 @@ const CONNECTION_NODE_HIT_PADDING = 32;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+const EMPTY_VISUAL_STYLES: AdminProjectVisualStyle[] = [];
 const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用于 AI 生图的提示词。
 
 要求：
@@ -532,6 +536,13 @@ function findUpstreamScriptNode(nodeId: string, nodes: CanvasNodeData[], connect
     return null;
 }
 
+function findConnectedShortDramaTarget(sourceNodeId: string, targetType: ShortDramaStepType, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return connections
+        .filter((connection) => connection.fromNodeId === sourceNodeId)
+        .map((connection) => nodes.find((node) => node.id === connection.toNodeId))
+        .find((node) => getShortDramaStepType(node) === targetType) || null;
+}
+
 function shortDramaNextLabel(node: CanvasNodeData) {
     if (node.type === CanvasNodeType.ProjectBrief) return "下一步：生成剧本";
     if (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script") return "下一步：生成角色";
@@ -586,15 +597,17 @@ function CanvasRefreshShell() {
     );
 }
 
-function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: CanvasNodeType) => void; onClose: () => void }) {
+function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: ConnectionCreateNodeType) => void; onClose: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
         <div
-            className="absolute z-[120] w-[300px] rounded-[18px] border p-3 shadow-2xl backdrop-blur"
+            className="thin-scrollbar absolute z-[120] max-h-[min(720px,calc(100vh-32px))] w-[320px] overflow-y-auto rounded-[18px] border p-3 shadow-2xl backdrop-blur"
             data-connection-create-menu
+            data-canvas-no-zoom
             style={{ left: pending.position.x, top: pending.position.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
+            onWheel={(event) => event.stopPropagation()}
         >
             <div className="mb-2 flex items-center justify-between px-1">
                 <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
@@ -604,21 +617,38 @@ function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: Pending
                     ×
                 </button>
             </div>
-            <div className="grid gap-1">
+            <ConnectionCreateSection theme={theme} title="常用节点">
                 <ConnectionCreateOption theme={theme} icon={<Bot className="size-5" />} title="智能体" description="读取上游文本和图片" onClick={() => onCreate(CanvasNodeType.Agent)} />
+                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text)} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title="图片生成" description="根据提示词生成图片" onClick={() => onCreate(CanvasNodeType.Image)} />
+                <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频生成" description="根据提示词或参考图生成视频" onClick={() => onCreate(CanvasNodeType.Video)} />
+                <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频参考" description="上传或引用音频素材" onClick={() => onCreate(CanvasNodeType.Audio)} />
+                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
+            </ConnectionCreateSection>
+            <ConnectionCreateSection theme={theme} title="短剧制作" className="mt-3">
+                <ConnectionCreateOption theme={theme} icon={<ClipboardList className="size-5" />} title="故事设定" description="主题、题材、风格和故事简述" onClick={() => onCreate(CanvasNodeType.ProjectBrief)} />
                 <ConnectionCreateOption theme={theme} icon={<ScrollText className="size-5" />} title="剧本Agent" description="创作或改编标准剧本" onClick={() => onCreate(CanvasNodeType.ScriptAgent)} />
+                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="剧本" description="标准剧本文本容器" onClick={() => onCreate("script")} />
                 <ConnectionCreateOption theme={theme} icon={<UsersRound className="size-5" />} title="角色Agent" description="输出角色、场景、道具" onClick={() => onCreate(CanvasNodeType.CharacterAgent)} />
                 <ConnectionCreateOption theme={theme} icon={<Clapperboard className="size-5" />} title="分镜Agent" description="拆解镜头和提示词" onClick={() => onCreate(CanvasNodeType.StoryboardAgent)} />
-                <ConnectionCreateOption theme={theme} icon={<ClipboardList className="size-5" />} title="故事设定" description="主题、题材、风格和故事简述" onClick={() => onCreate(CanvasNodeType.ProjectBrief)} />
                 <ConnectionCreateOption theme={theme} icon={<UsersRound className="size-5" />} title="角色板" description="角色、场景和道具资产" onClick={() => onCreate(CanvasNodeType.SubjectBoard)} />
                 <ConnectionCreateOption theme={theme} icon={<Clapperboard className="size-5" />} title="分镜板" description="镜头描述、主体、图片和视频" onClick={() => onCreate(CanvasNodeType.Storyboard)} />
-                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text)} />
-                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
-                <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
-                <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频参考" onClick={() => onCreate(CanvasNodeType.Audio)} />
-                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
-            </div>
+            </ConnectionCreateSection>
         </div>
+    );
+}
+
+function ConnectionCreateSection({ theme, title, className = "", children }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; title: string; className?: string; children: ReactNode }) {
+    return (
+        <section className={className}>
+            <div className="mb-1.5 flex items-center gap-2 px-2">
+                <span className="text-xs font-semibold" style={{ color: theme.node.muted }}>
+                    {title}
+                </span>
+                <span className="h-px flex-1" style={{ background: theme.node.stroke }} />
+            </div>
+            <div className="grid gap-1">{children}</div>
+        </section>
     );
 }
 
@@ -696,6 +726,7 @@ function InfiniteCanvasPage() {
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
+    const visualStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_VISUAL_STYLES;
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -994,15 +1025,32 @@ function InfiniteCanvasPage() {
         [message],
     );
 
+    const withDefaultStyle = useCallback(
+        (type: CanvasNodeType | ConnectionCreateNodeType, metadata?: CanvasNodeMetadata): CanvasNodeMetadata | undefined => {
+            if (!config.defaultStyleName || metadata?.styleName || (type !== CanvasNodeType.Image && type !== CanvasNodeType.Video && type !== CanvasNodeType.Config)) return metadata;
+            return { ...metadata, styleName: config.defaultStyleName };
+        },
+        [config.defaultStyleName],
+    );
+
     const createConnectedNode = useCallback(
-        (type: CanvasNodeType, pending: PendingConnectionCreate) => {
+        (type: ConnectionCreateNodeType, pending: PendingConnectionCreate) => {
             const metadata =
                 type === CanvasNodeType.Config
                     ? { model: effectiveConfig.imageModel || effectiveConfig.model, size: effectiveConfig.size, count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count) }
-                    : isAgentNodeType(type)
+                    : type !== "script" && isAgentNodeType(type)
                       ? { model: effectiveConfig.textModel || effectiveConfig.model }
                       : undefined;
-            const newNode = createCanvasNode(type, pending.position, metadata);
+            const newNode = type === "script" ? createScriptTextNode(pending.position, nodesRef.current, metadata) : createCanvasNode(type, pending.position, withDefaultStyle(type, metadata));
+            if (!pending.connection) {
+                setNodes((prev) => [...prev, newNode]);
+                setSelectedNodeIds(new Set([newNode.id]));
+                setSelectedConnectionId(null);
+                if (type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
+                setPendingConnectionCreate(null);
+                setConnecting(null);
+                return;
+            }
             const connection = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
                 const sourceNode = nodesRef.current.find((node) => node.id === pending.connection.nodeId);
@@ -1018,7 +1066,7 @@ function InfiniteCanvasPage() {
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.textModel, message, setConnecting],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.textModel, message, setConnecting, withDefaultStyle],
     );
 
     const cancelPendingConnectionCreate = useCallback(() => {
@@ -1335,14 +1383,14 @@ function InfiniteCanvasPage() {
                             model: effectiveConfig.textModel || effectiveConfig.model,
                         }
                     : undefined;
-            const newNode = createCanvasNode(type, targetPosition, configMetadata);
+            const newNode = createCanvasNode(type, targetPosition, withDefaultStyle(type, configMetadata));
 
             setNodes((prev) => [...prev, newNode]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
             if (type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.textModel, getCanvasCenter],
+        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, effectiveConfig.textModel, getCanvasCenter, withDefaultStyle],
     );
 
     const activeShortDramaNode = selectedNodeIds.size === 1 ? nodeById.get(Array.from(selectedNodeIds)[0]) || null : null;
@@ -1447,20 +1495,31 @@ function InfiniteCanvasPage() {
                 const connection = normalizeConnection(fromNodeId, toNodeId, [...nodesRef.current, ...nextNodes], "source");
                 if (connection) nextConnections.push({ id: nanoid(), ...connection });
             };
+            const focusExisting = (targetType: ShortDramaStepType) => {
+                const existing = findConnectedShortDramaTarget(sourceNode.id, targetType, nodesRef.current, connectionsRef.current);
+                if (!existing) return false;
+                setSelectedNodeIds(new Set([existing.id]));
+                setSelectedConnectionId(null);
+                setDialogNodeId(existing.id);
+                return true;
+            };
 
             if (sourceNode.type === CanvasNodeType.ProjectBrief) {
+                if (focusExisting(CanvasNodeType.ScriptAgent)) return;
                 const agentNode = createAtRight(CanvasNodeType.ScriptAgent);
                 const scriptNode = createAtRight("script");
                 addConnection(sourceNode.id, agentNode.id);
                 addConnection(agentNode.id, scriptNode.id);
                 focusNodeId = agentNode.id;
             } else if (sourceNode.type === CanvasNodeType.Text && sourceNode.metadata?.textRole === "script") {
+                if (focusExisting(CanvasNodeType.CharacterAgent)) return;
                 const agentNode = createAtRight(CanvasNodeType.CharacterAgent);
                 const boardNode = createAtRight(CanvasNodeType.SubjectBoard);
                 addConnection(sourceNode.id, agentNode.id);
                 addConnection(agentNode.id, boardNode.id);
                 focusNodeId = agentNode.id;
             } else if (sourceNode.type === CanvasNodeType.SubjectBoard) {
+                if (focusExisting(CanvasNodeType.StoryboardAgent)) return;
                 const agentNode = createAtRight(CanvasNodeType.StoryboardAgent);
                 const storyboardNode = createAtRight(CanvasNodeType.Storyboard);
                 addConnection(sourceNode.id, agentNode.id);
@@ -3116,11 +3175,29 @@ function InfiniteCanvasPage() {
         setTitleEditing(false);
     }, [projectId, renameProject, titleDraft]);
 
+    const openCanvasCreateMenu = useCallback(
+        (event: ReactMouseEvent) => {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            if (target?.closest("[data-node-id],[data-connection-id],[data-canvas-no-zoom]")) return;
+            event.preventDefault();
+            setContextMenu(null);
+            setSelectedNodeIds(new Set());
+            setSelectedConnectionId(null);
+            setSelectedGroupId(null);
+            setPendingConnectionCreate({ position: screenToCanvas(event.clientX, event.clientY) });
+        },
+        [screenToCanvas],
+    );
+
     const preventCanvasContextMenu = useCallback((event: ReactMouseEvent) => {
-        if ((event.target as HTMLElement).closest("[data-node-id]")) return;
+        if ((event.target as HTMLElement).closest("[data-node-id],[data-connection-id],[data-canvas-no-zoom]")) return;
         event.preventDefault();
-        setContextMenu(null);
-    }, []);
+        openCanvasCreateMenu(event);
+    }, [openCanvasCreateMenu]);
+
+    const handleCanvasDoubleClick = useCallback((event: ReactMouseEvent) => {
+        openCanvasCreateMenu(event);
+    }, [openCanvasCreateMenu]);
 
     const handleGenerateNode = useCallback(
         async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
@@ -3139,7 +3216,12 @@ function InfiniteCanvasPage() {
             const generationContext = await hydrateNodeGenerationContext(
                 buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? `请根据要求修改以下文本。\n\n原文：\n${sourceTextContent}\n\n修改要求：\n${submittedPrompt}` : submittedPrompt),
             );
-            const effectivePrompt = generationContext.prompt.trim();
+            const selectedStyle = mode === "image" || mode === "video" ? findGenerationStyle(visualStyles, sourceNode?.metadata?.styleName) : null;
+            const styledGenerationContext =
+                selectedStyle && (mode === "image" || mode === "video")
+                    ? { ...generationContext, prompt: applyGenerationStylePrompt(generationContext.prompt, selectedStyle), referenceImages: prependStyleReference(selectedStyle, generationContext.referenceImages) }
+                    : generationContext;
+            const effectivePrompt = styledGenerationContext.prompt.trim();
             const markSourceStatus = sourceNode?.type !== CanvasNodeType.Image && !editingTextNode;
             const statusPrompt = sourceNode?.type === CanvasNodeType.Config ? effectivePrompt : prompt;
             if (!effectivePrompt && (mode === "text" || mode === "audio")) {
@@ -3159,9 +3241,9 @@ function InfiniteCanvasPage() {
                         isImageNode && sourceNode?.metadata?.content
                             ? [{ id: sourceNode.id, name: `${sourceNode.title || sourceNode.id}.png`, type: sourceNode.metadata.mimeType || "image/png", dataUrl: sourceNode.metadata.content, storageKey: sourceNode.metadata.storageKey }]
                             : [];
-                    const referenceImages = sourceReference.length ? sourceReference : generationContext.referenceImages;
+                    const referenceImages = sourceReference.length ? prependStyleReference(selectedStyle, sourceReference) : styledGenerationContext.referenceImages;
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
-                    const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
+                    const generationMetadata = { ...buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages), styleName: selectedStyle?.name };
                     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
                     const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                     const parentPosition = sourceNode?.position || { x: 0, y: 0 };
@@ -3316,7 +3398,7 @@ function InfiniteCanvasPage() {
                     const ownReferences = await resolveVideoReferences(sourceNode?.metadata?.videoReferences);
                     const storyboardShotImage = linkedStoryboardShotImageReference(nodesRef.current, sourceNode);
                     const effectiveRefMode: CanvasVideoRefMode = storyboardShotImage && refMode === "text" ? "first" : refMode;
-                    const videoReferences = clampVideoReferences(effectiveRefMode, [...ownReferences, ...(storyboardShotImage ? [storyboardShotImage] : []), ...generationContext.referenceImages]);
+                    const videoReferences = clampVideoReferences(effectiveRefMode, [...ownReferences, ...(storyboardShotImage ? [storyboardShotImage] : []), ...styledGenerationContext.referenceImages]);
                     const referenceKeys = videoReferences.map(referenceUrl).filter((url): url is string => Boolean(url));
                     const videoId = isEmptyVideoNode ? nodeId : nanoid();
                     const parent = sourceNode?.position || { x: 0, y: 0 };
@@ -3327,15 +3409,15 @@ function InfiniteCanvasPage() {
                         position: isEmptyVideoNode ? sourceNode.position : { x: parent.x + (sourceNode?.width || spec.width) + 96, y: parent.y },
                         width: isEmptyVideoNode ? sourceNode.width : spec.width,
                         height: isEmptyVideoNode ? sourceNode.height : spec.height,
-                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, videoRefMode: effectiveRefMode, references: referenceKeys },
+                        metadata: { prompt: effectivePrompt, status: NODE_STATUS_LOADING, model: generationConfig.model, styleName: selectedStyle?.name, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, videoRefMode: effectiveRefMode, references: referenceKeys },
                     };
                     pendingChildIds = [videoId];
                     if (isEmptyVideoNode) setNodes((prev) => patchLinkedStoryboardSlot(prev, sourceNode, "video", { status: "generating" }));
                     setNodes((prev) => (isEmptyVideoNode ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode } : node)) : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), videoNode]));
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
-                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, videoReferences, generationContext.referenceVideos, generationContext.referenceAudios));
+                    const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, videoReferences, styledGenerationContext.referenceVideos, styledGenerationContext.referenceAudios));
                     const videoSize = fitNodeSize(video.width || spec.width, video.height || spec.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
-                    setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, videoRefMode: effectiveRefMode, references: referenceKeys } } : node)));
+                    setNodes((prev) => prev.map((node) => (node.id === videoId ? { ...node, width: videoSize.width, height: videoSize.height, position: { x: node.position.x + node.width / 2 - videoSize.width / 2, y: node.position.y + node.height / 2 - videoSize.height / 2 }, metadata: { ...node.metadata, ...videoMetadata(video), prompt: effectivePrompt, model: generationConfig.model, styleName: selectedStyle?.name, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark, videoRefMode: effectiveRefMode, references: referenceKeys } } : node)));
                     if (isEmptyVideoNode) setNodes((prev) => patchLinkedStoryboardSlot(prev, sourceNode, "video", { status: "done", url: video.url, nodeId: videoId }));
                     return;
                 }
@@ -3477,11 +3559,13 @@ function InfiniteCanvasPage() {
 
             try {
                 const context = await hydrateNodeGenerationContext(buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, submittedPrompt));
-                const effectivePrompt = context.prompt.trim();
+                const selectedStyle = findGenerationStyle(visualStyles, sourceNode.metadata?.styleName);
+                const styledContext = selectedStyle ? { ...context, prompt: applyGenerationStylePrompt(context.prompt, selectedStyle), referenceImages: prependStyleReference(selectedStyle, context.referenceImages) } : context;
+                const effectivePrompt = styledContext.prompt.trim();
                 if (!effectivePrompt) return;
 
                 if (mode === "image") {
-                    const image = context.referenceImages.length ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, context.referenceImages).then((items) => items[0]) : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt).then((items) => items[0]);
+                    const image = styledContext.referenceImages.length ? await requestEdit({ ...generationConfig, count: "1" }, effectivePrompt, styledContext.referenceImages).then((items) => items[0]) : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt).then((items) => items[0]);
                     const uploaded = await uploadImage(image.dataUrl);
                     const imageSize = fitNodeSize(uploaded.width, uploaded.height);
                     const resultId = findStoryboardResultNodeId(nodesRef.current, nodeId, shotId, "image") || nanoid();
@@ -3498,7 +3582,7 @@ function InfiniteCanvasPage() {
                             "image",
                             resultId,
                             imageSize,
-                            { ...imageMetadata(uploaded), prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, quality: generationConfig.quality },
+                            { ...imageMetadata(uploaded), prompt: effectivePrompt, model: generationConfig.model, styleName: selectedStyle?.name, size: generationConfig.size, quality: generationConfig.quality },
                         ),
                     );
                     setConnections((prev) => (prev.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === resultId) ? prev : [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: resultId }]));
@@ -3508,8 +3592,8 @@ function InfiniteCanvasPage() {
 
                 const latestShot = nodesRef.current.find((node) => node.id === nodeId)?.metadata?.storyboard?.shots.find((item) => item.id === shotId) || shot;
                 const shotImage = storyboardShotImageReference(latestShot);
-                const videoReferences = [...(shotImage ? [shotImage] : []), ...context.referenceImages];
-                const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, videoReferences, context.referenceVideos, context.referenceAudios));
+                const videoReferences = [...(shotImage ? [shotImage] : []), ...styledContext.referenceImages];
+                const video = await storeGeneratedVideo(await requestVideoGeneration(generationConfig, effectivePrompt, videoReferences, styledContext.referenceVideos, styledContext.referenceAudios));
                 const videoSize = fitNodeSize(video.width || NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, video.height || NODE_DEFAULT_SIZE[CanvasNodeType.Video].height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
                 const resultId = findStoryboardResultNodeId(nodesRef.current, nodeId, shotId, "video") || nanoid();
                 setNodes((prev) =>
@@ -3525,7 +3609,7 @@ function InfiniteCanvasPage() {
                         "video",
                         resultId,
                         videoSize,
-                        { ...videoMetadata(video), prompt: effectivePrompt, model: generationConfig.model, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark },
+                        { ...videoMetadata(video), prompt: effectivePrompt, model: generationConfig.model, styleName: selectedStyle?.name, size: generationConfig.size, seconds: generationConfig.videoSeconds, vquality: generationConfig.vquality, generateAudio: generationConfig.videoGenerateAudio, watermark: generationConfig.videoWatermark },
                     ),
                 );
                 setConnections((prev) => (prev.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === resultId) ? prev : [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: resultId }]));
@@ -3538,7 +3622,7 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, message, openConfigDialog],
+        [effectiveConfig, message, openConfigDialog, visualStyles],
     );
 
     const updateBoardMediaPrompt = useCallback((target: CanvasBoardMediaEditorTarget, prompt: string) => {
@@ -3968,7 +4052,7 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, message, openConfigDialog],
+        [effectiveConfig, message, openConfigDialog, visualStyles],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -3992,6 +4076,7 @@ function InfiniteCanvasPage() {
                     model: effectiveConfig.imageModel || effectiveConfig.model,
                     size: effectiveConfig.size,
                     count: getGenerationCount(effectiveConfig.canvasImageCount || effectiveConfig.count),
+                    ...(config.defaultStyleName ? { styleName: config.defaultStyleName } : {}),
                 },
             );
             const connection = { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: configNode.id };
@@ -4005,7 +4090,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             setDialogNodeId(configNode.id);
         },
-        [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
+        [config.defaultStyleName, effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, message],
     );
 
     const insertAssistantImage = useCallback(
@@ -4145,6 +4230,7 @@ function InfiniteCanvasPage() {
                     }}
                     onCanvasMouseDown={handleCanvasMouseDown}
                     onCanvasDeselect={deselectCanvas}
+                    onCanvasDoubleClick={handleCanvasDoubleClick}
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
                 >
@@ -4816,7 +4902,6 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "docs", icon: <BookOpen className="size-4" />, label: "文档", onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
                                 { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },

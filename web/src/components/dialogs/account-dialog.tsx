@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BillingCard } from "@/components/billing-card";
 import { CreditRechargePanel } from "@/components/credit-recharge-panel";
 import { CreditSymbol } from "@/constant/credits";
-import { fetchAccountSummary, type AccountCreditLog, type AccountSummary } from "@/services/api/auth";
+import { createPaymentOrder, fetchAccountSummary, type AccountCreditLog, type AccountSummary, type CreditPackage, type SubscriptionPlan } from "@/services/api/auth";
 import { useUserStore } from "@/stores/use-user-store";
 
 type AccountTab = "profile" | "plans" | "packages" | "recharge" | "consume";
@@ -42,6 +42,7 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
     const storeUser = useUserStore((state) => state.user);
     const [summary, setSummary] = useState<AccountSummary | null>(null);
     const [loading, setLoading] = useState(false);
+    const [payingId, setPayingId] = useState("");
     const [activeTab, setActiveTab] = useState<AccountTab>(initialTab);
     const user = summary?.user || storeUser;
     const visibleNav = useMemo(() => accountNav.filter((item) => item.key !== "plans" || summary?.plans?.length).filter((item) => item.key !== "packages" || summary?.creditPackages?.length), [summary]);
@@ -67,6 +68,23 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
             setActiveTab("profile");
         }
     }, [activeTab, summary, visibleNav]);
+
+    const startPayment = async (type: "subscription" | "credit", item: SubscriptionPlan | CreditPackage) => {
+        if (!token) {
+            message.warning("请先登录");
+            return;
+        }
+        setPayingId(item.id);
+        try {
+            const result = await createPaymentOrder(token, type, item.id);
+            if (!result.payUrl) throw new Error("支付链接生成失败");
+            window.location.href = result.payUrl;
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "创建支付订单失败");
+        } finally {
+            setPayingId("");
+        }
+    };
 
     return (
         <Modal
@@ -97,7 +115,7 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
                                     onClick={() => setActiveTab(item.key)}
                                     className={`flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm transition ${
                                         active
-                                            ? "bg-neutral-950 font-medium text-white shadow-sm dark:bg-neutral-700 dark:text-neutral-50"
+                                            ? "bg-neutral-200 font-medium text-neutral-950 shadow-sm dark:bg-neutral-700 dark:text-neutral-50"
                                             : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-950 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-50"
                                     }`}
                                 >
@@ -150,6 +168,8 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
                                     benefits={item.benefits}
                                     fallbackButtonText="订阅套餐"
                                     fallbackCreditLabel="积分每月"
+                                    onPay={() => void startPayment("subscription", item)}
+                                    paying={payingId === item.id}
                                 />
                             ))}
                             {!summary?.plans?.length && <Empty className="py-8" description={loading ? "套餐加载中" : "暂无套餐"} />}
@@ -157,7 +177,7 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
                     )}
 
                     {activeTab === "packages" && (
-                        summary?.creditPackages?.length ? <CreditRechargePanel credits={user?.credits || 0} packages={summary.creditPackages} /> : <Empty className="py-8" description={loading ? "充值包加载中" : "暂无充值包"} />
+                        summary?.creditPackages?.length ? <CreditRechargePanel credits={user?.credits || 0} packages={summary.creditPackages} onPay={(item) => void startPayment("credit", item)} payingId={payingId} /> : <Empty className="py-8" description={loading ? "充值包加载中" : "暂无充值包"} />
                     )}
 
                     {activeTab === "recharge" && <Table rowKey="id" size="small" columns={logColumns} dataSource={summary?.rechargeRecords || []} pagination={{ pageSize: 10 }} />}
