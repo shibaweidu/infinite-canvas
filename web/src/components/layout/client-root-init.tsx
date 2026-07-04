@@ -28,6 +28,20 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     }, [hydrateUser, isLoginPage]);
 
     useEffect(() => {
+        const site = publicSettings?.site;
+        const title = site?.title?.trim() || site?.name?.trim() || "无限画布";
+        const description = site?.description?.trim() || "一个无限画布创作工具";
+        document.title = title;
+        let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+        if (!meta) {
+            meta = document.createElement("meta");
+            meta.name = "description";
+            document.head.appendChild(meta);
+        }
+        meta.content = description;
+    }, [publicSettings?.site]);
+
+    useEffect(() => {
         if (handledConfigParams.current) return;
         const searchParams = new URLSearchParams(window.location.search);
         const baseUrl = searchParams.get("baseUrl") || searchParams.get("baseurl");

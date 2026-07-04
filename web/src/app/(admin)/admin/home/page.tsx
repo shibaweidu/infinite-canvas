@@ -1,15 +1,15 @@
 "use client";
 
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SendOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SendOutlined, UploadOutlined } from "@ant-design/icons";
 import { App, Button, Card, Flex, Form, Image, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { requestGeneration } from "@/services/api/image";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
-import { deleteAdminHomeCategory, deleteAdminHomeSlide, deleteAdminHomeTag, deleteAdminHomeWork, fetchAdminHomeCategories, fetchAdminHomeSlides, fetchAdminHomeTags, fetchAdminHomeWorks, saveAdminHomeCategory, saveAdminHomeSlide, saveAdminHomeTag, saveAdminHomeWork } from "@/services/api/admin";
+import { deleteAdminHomeCategory, deleteAdminHomeSlide, deleteAdminHomeTag, deleteAdminHomeWork, fetchAdminHomeCategories, fetchAdminHomeSlides, fetchAdminHomeTags, fetchAdminHomeWorks, fetchAdminSettings, importAdminHomeWorkFromUrl, saveAdminHomeCategory, saveAdminHomeSlide, saveAdminHomeTag, saveAdminHomeWork, saveAdminSettings, uploadAdminHomeMedia, type AdminSettings } from "@/services/api/admin";
 import type { HomeCategory, HomeSlide, HomeTag, HomeWork, HomeWorkStatus, HomeWorkType } from "@/services/api/home";
 import { uploadImage } from "@/services/image-storage";
 import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -45,6 +45,7 @@ export default function AdminHomePage() {
     const [slides, setSlides] = useState<HomeSlide[]>([]);
     const [categories, setCategories] = useState<HomeCategory[]>([]);
     const [tags, setTags] = useState<HomeTag[]>([]);
+    const [settings, setSettings] = useState<AdminSettings | null>(null);
     const [loading, setLoading] = useState(false);
     const [workOpen, setWorkOpen] = useState(false);
     const [slideOpen, setSlideOpen] = useState(false);
@@ -52,10 +53,19 @@ export default function AdminHomePage() {
     const [editingSlide, setEditingSlide] = useState<Partial<HomeSlide> | null>(null);
     const [workForm] = Form.useForm<WorkForm>();
     const [slideForm] = Form.useForm<Partial<HomeSlide>>();
+    const workMediaInputRef = useRef<HTMLInputElement>(null);
+    const slideMediaInputRef = useRef<HTMLInputElement>(null);
     const [generatePrompt, setGeneratePrompt] = useState("");
+    const [importUrl, setImportUrl] = useState("");
+    const [importModel, setImportModel] = useState("");
     const [generateType, setGenerateType] = useState<HomeWorkType>("image");
     const [generating, setGenerating] = useState(false);
+    const [importingWork, setImportingWork] = useState(false);
+    const [uploadingField, setUploadingField] = useState<"" | "workMedia" | "slideMedia">("");
     const model = generateType === "image" ? effectiveConfig.imageModel : effectiveConfig.videoModel;
+    const worksEnabled = settings?.public.site.worksEnabled !== false;
+    const heroMediaItems = slides.filter((item) => item.kind === "media");
+    const heroTextItems = slides.filter((item) => item.kind !== "media");
 
     useEffect(() => {
         void refresh();
@@ -66,17 +76,26 @@ export default function AdminHomePage() {
     }, [editingWork, workForm]);
 
     useEffect(() => {
-        if (editingSlide) slideForm.setFieldsValue(editingSlide);
+        if (editingSlide) {
+            slideForm.resetFields();
+            slideForm.setFieldsValue(editingSlide);
+        }
     }, [editingSlide, slideForm]);
+
+    useEffect(() => {
+        if (!settings || importModel) return;
+        setImportModel(settings.public.modelChannel.defaultTextModel || "");
+    }, [importModel, settings]);
 
     const refresh = async () => {
         setLoading(true);
         try {
-            const [workData, slideData, categoryData, tagData] = await Promise.all([fetchAdminHomeWorks(token, { pageSize: 100, status: "all" }), fetchAdminHomeSlides(token), fetchAdminHomeCategories(token), fetchAdminHomeTags(token)]);
+            const [workData, slideData, categoryData, tagData, settingsData] = await Promise.all([fetchAdminHomeWorks(token, { pageSize: 100, status: "all" }), fetchAdminHomeSlides(token), fetchAdminHomeCategories(token), fetchAdminHomeTags(token), fetchAdminSettings(token)]);
             setWorks(workData.items);
             setSlides(slideData);
             setCategories(categoryData);
             setTags(tagData);
+            setSettings(settingsData);
         } finally {
             setLoading(false);
         }
@@ -84,7 +103,16 @@ export default function AdminHomePage() {
 
     const openWorkEditor = (item: Partial<HomeWork>) => {
         setEditingWork({ type: "image", status: "pending", allowSameStyle: true, showPrompt: true, tags: [], ...item });
+        setImportUrl("");
+        setImportModel(settings?.public.modelChannel.defaultTextModel || "");
         setWorkOpen(true);
+    };
+
+    const saveWorksEnabled = async (worksEnabled: boolean) => {
+        if (!settings) return;
+        const saved = await saveAdminSettings(token, { ...settings, public: { ...settings.public, site: { ...settings.public.site, worksEnabled } } });
+        setSettings(saved);
+        message.success(worksEnabled ? "首页作品展示已开启" : "首页作品展示已关闭");
     };
 
     const saveWork = async () => {
@@ -93,6 +121,52 @@ export default function AdminHomePage() {
         message.success("作品已保存");
         setWorkOpen(false);
         await refresh();
+    };
+
+    const importWorkFromUrl = async () => {
+        const url = importUrl.trim();
+        if (!url) {
+            message.warning("请先粘贴作品链接");
+            return;
+        }
+        setImportingWork(true);
+        try {
+            const result = await importAdminHomeWorkFromUrl(token, url, importModel);
+            workForm.setFieldsValue({
+                ...result,
+                tagNames: result.tags || [],
+                status: result.status || "pending",
+                showPrompt: result.showPrompt !== false,
+                allowSameStyle: result.allowSameStyle !== false,
+            });
+            setEditingWork((current) => ({ type: "image", status: "pending", allowSameStyle: true, showPrompt: true, tags: [], ...current, ...result }));
+            message.success("链接解析完成，已自动回填作品信息");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "链接解析失败");
+        } finally {
+            setImportingWork(false);
+        }
+    };
+
+    const uploadHomeMedia = async (file: File | undefined, field: "workMedia" | "slideMedia") => {
+        if (!file) return;
+        setUploadingField(field);
+        try {
+            const uploaded = await uploadAdminHomeMedia(token, file);
+            if (field === "workMedia") {
+                workForm.setFieldValue("mediaUrl", uploaded.url);
+                if (!workForm.getFieldValue("coverUrl") && uploaded.mimeType.startsWith("image/")) workForm.setFieldValue("coverUrl", uploaded.url);
+            } else {
+                slideForm.setFieldValue("coverUrl", uploaded.url);
+            }
+            message.success("媒体已上传");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "媒体上传失败");
+        } finally {
+            setUploadingField("");
+            if (field === "workMedia" && workMediaInputRef.current) workMediaInputRef.current.value = "";
+            if (field === "slideMedia" && slideMediaInputRef.current) slideMediaInputRef.current.value = "";
+        }
     };
 
     const generateWork = async () => {
@@ -156,9 +230,27 @@ export default function AdminHomePage() {
         await refresh();
     };
 
-    const slideColumns: ColumnsType<HomeSlide> = [
-        { title: "封面", width: 110, render: (_, item) => <Image src={item.coverUrl || "/logo.svg"} alt={item.title} width={72} height={44} style={{ objectFit: "cover", borderRadius: 8 }} fallback="/logo.svg" /> },
+    const textColumns: ColumnsType<HomeSlide> = [
         { title: "标题", dataIndex: "title", render: (_, item) => <Typography.Text strong>{item.title}</Typography.Text> },
+        { title: "副标题", dataIndex: "subtitle", ellipsis: true },
+        { title: "启用", dataIndex: "enabled", width: 80, render: (value) => <Tag>{value ? "启用" : "关闭"}</Tag> },
+        { title: "排序", dataIndex: "sort", width: 80 },
+        {
+            title: "操作",
+            width: 120,
+            align: "right",
+            render: (_, item) => (
+                <Space size={4}>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingSlide(item); setSlideOpen(true); }} />
+                    <Button danger size="small" icon={<DeleteOutlined />} onClick={() => void removeSlide(item)} />
+                </Space>
+            ),
+        },
+    ];
+
+    const mediaColumns: ColumnsType<HomeSlide> = [
+        { title: "背景媒体", width: 120, render: (_, item) => <HeroTextMedia url={item.coverUrl} title={item.title || "顶部背景"} /> },
+        { title: "媒体地址", dataIndex: "coverUrl", ellipsis: true },
         { title: "启用", dataIndex: "enabled", width: 80, render: (value) => <Tag>{value ? "启用" : "关闭"}</Tag> },
         { title: "排序", dataIndex: "sort", width: 80 },
         {
@@ -177,13 +269,13 @@ export default function AdminHomePage() {
     const saveSlide = async () => {
         const value = await slideForm.validateFields();
         await saveAdminHomeSlide(token, { ...editingSlide, ...value });
-        message.success("幻灯片已保存");
+        message.success(editingSlide?.kind === "media" ? "顶部背景已保存" : "首页文案已保存");
         setSlideOpen(false);
         await refresh();
     };
 
     const removeSlide = async (item: HomeSlide) => {
-        if (!window.confirm(`确定删除“${item.title}”吗？`)) return;
+        if (!window.confirm(`确定删除“${item.title || "顶部背景"}”吗？`)) return;
         await deleteAdminHomeSlide(token, item.id);
         await refresh();
     };
@@ -195,22 +287,50 @@ export default function AdminHomePage() {
                     <Flex justify="space-between" align="center" gap={16} wrap>
                         <div>
                             <Typography.Title level={4} style={{ margin: 0 }}>首页内容</Typography.Title>
-                            <Typography.Text type="secondary">管理首页幻灯片、精选作品、作品分类和标签。</Typography.Text>
+                            <Typography.Text type="secondary">管理首页顶部文案、精选作品、作品分类和标签。</Typography.Text>
                         </div>
-                        <Button icon={<ReloadOutlined />} onClick={() => void refresh()}>刷新</Button>
+                        <Space>
+                            <span>首页作品展示</span>
+                            <Switch checked={worksEnabled} disabled={!settings} onChange={(checked) => void saveWorksEnabled(checked)} />
+                            <Button icon={<ReloadOutlined />} onClick={() => void refresh()}>刷新</Button>
+                        </Space>
                     </Flex>
                 </Card>
                 <Tabs
                     items={[
-                        { key: "works", label: "作品发布", children: <WorksTab config={config} theme={theme} updateConfig={updateConfig} model={model} generateType={generateType} setGenerateType={setGenerateType} prompt={generatePrompt} setPrompt={setGeneratePrompt} generating={generating} onGenerate={generateWork} onAdd={() => openWorkEditor({})} works={works} columns={workColumns} loading={loading} /> },
-                        { key: "slides", label: "幻灯片", children: <TableCard title="幻灯片列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingSlide({ enabled: true, sort: 0 }); setSlideOpen(true); }}>新增幻灯片</Button>} loading={loading} columns={slideColumns} data={slides} /> },
+                        { key: "works", label: "作品发布", children: <WorksTab config={config} theme={theme} updateConfig={updateConfig} model={model} generateType={generateType} setGenerateType={setGenerateType} prompt={generatePrompt} setPrompt={setGeneratePrompt} generating={generating} onGenerate={generateWork} /> },
+                        {
+                            key: "slides",
+                            label: "顶部展示",
+                            children: (
+                                <Flex vertical gap={16}>
+                                    <TableCard title="顶部背景" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingSlide({ kind: "media", enabled: true, sort: 0 }); setSlideOpen(true); }}>新增背景</Button>} loading={loading} columns={mediaColumns} data={heroMediaItems} />
+                                    <TableCard title="覆盖文案" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingSlide({ kind: "text", enabled: true, sort: 0 }); setSlideOpen(true); }}>新增文案</Button>} loading={loading} columns={textColumns} data={heroTextItems} />
+                                </Flex>
+                            ),
+                        },
                         { key: "categories", label: "分类", children: <NameManager title="作品分类" items={categories} onSave={(item) => saveAdminHomeCategory(token, item).then(refresh)} onDelete={(id) => deleteAdminHomeCategory(token, id).then(refresh)} /> },
                         { key: "tags", label: "标签", children: <NameManager title="作品标签" items={tags} onSave={(item) => saveAdminHomeTag(token, item).then(refresh)} onDelete={(id) => deleteAdminHomeTag(token, id).then(refresh)} /> },
+                        { key: "work-list", label: "作品列表", children: <TableCard title="作品列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openWorkEditor({})}>手动新增</Button>} loading={loading} columns={workColumns} data={works} /> },
                     ]}
                 />
             </Flex>
             <Modal title={editingWork?.id ? "编辑作品" : "发布作品"} open={workOpen} width={820} onCancel={() => setWorkOpen(false)} onOk={() => void saveWork()} okText="保存" cancelText="取消" destroyOnHidden>
                 <Form form={workForm} layout="vertical" requiredMark={false}>
+                    <Card size="small" title="作品链接导入" style={{ marginBottom: 16 }}>
+                        <Flex gap={10} align="center">
+                            <Input value={importUrl} onChange={(event) => setImportUrl(event.target.value)} placeholder="粘贴作品链接，自动抓取媒体并用大模型回填信息" onPressEnter={() => void importWorkFromUrl()} />
+                            <div style={{ width: 240 }}>
+                                <ModelPicker config={config} value={importModel} onChange={setImportModel} modelType="text" fullWidth placeholder="解析模型" />
+                            </div>
+                            <Button icon={<LinkOutlined />} loading={importingWork} onClick={() => void importWorkFromUrl()}>
+                                智能解析
+                            </Button>
+                        </Flex>
+                        <Typography.Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                            支持直接图片/视频链接和普通网页链接；解析模型默认复用系统默认文本模型，解析结果只会回填下方表单，仍需手动保存发布。
+                        </Typography.Text>
+                    </Card>
                     <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}><Input /></Form.Item>
                     <Form.Item name="description" label="作品信息"><Input.TextArea rows={3} /></Form.Item>
                     <Flex gap={12}>
@@ -222,7 +342,16 @@ export default function AdminHomePage() {
                         <Form.Item name="tagNames" label="标签" style={{ flex: 1 }}><Select mode="multiple" allowClear options={tags.map((item) => ({ label: item.name, value: item.name }))} /></Form.Item>
                     </Flex>
                     <Form.Item name="coverUrl" label="封面 URL"><Input /></Form.Item>
-                    <Form.Item name="mediaUrl" label="作品媒体 URL" rules={[{ required: true, message: "请输入作品媒体地址" }]}><Input /></Form.Item>
+                    <Form.Item label="作品媒体">
+                        <Space.Compact style={{ width: "100%" }}>
+                            <Form.Item name="mediaUrl" noStyle rules={[{ required: true, message: "请上传或输入作品媒体地址" }]}>
+                                <Input placeholder="上传后自动回填，也可粘贴 URL" />
+                            </Form.Item>
+                            <Button loading={uploadingField === "workMedia"} icon={<UploadOutlined />} onClick={() => workMediaInputRef.current?.click()}>
+                                上传
+                            </Button>
+                        </Space.Compact>
+                    </Form.Item>
                     <Form.Item name="prompt" label="提示词"><Input.TextArea rows={4} /></Form.Item>
                     <Flex gap={12}>
                         <Form.Item name="model" label="模型" style={{ flex: 1 }}><Input /></Form.Item>
@@ -234,24 +363,41 @@ export default function AdminHomePage() {
                     </Flex>
                 </Form>
             </Modal>
-            <Modal title={editingSlide?.id ? "编辑幻灯片" : "新增幻灯片"} open={slideOpen} width={720} onCancel={() => setSlideOpen(false)} onOk={() => void saveSlide()} okText="保存" cancelText="取消" destroyOnHidden>
+            <Modal title={editingSlide?.kind === "media" ? (editingSlide?.id ? "编辑顶部背景" : "新增顶部背景") : (editingSlide?.id ? "编辑覆盖文案" : "新增覆盖文案")} open={slideOpen} width={720} onCancel={() => setSlideOpen(false)} onOk={() => void saveSlide()} okText="保存" cancelText="取消" destroyOnHidden>
                 <Form form={slideForm} layout="vertical" requiredMark={false}>
-                    <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}><Input /></Form.Item>
-                    <Form.Item name="subtitle" label="副标题"><Input.TextArea rows={2} /></Form.Item>
-                    <Form.Item name="coverUrl" label="封面 URL" rules={[{ required: true, message: "请输入封面地址" }]}><Input /></Form.Item>
-                    <Form.Item name="workId" label="关联作品"><Select allowClear options={works.map((item) => ({ label: item.title, value: item.id }))} /></Form.Item>
-                    <Form.Item name="linkUrl" label="跳转链接"><Input placeholder="可填写外链或站内路径" /></Form.Item>
+                    <Form.Item name="kind" hidden><Input /></Form.Item>
+                    {editingSlide?.kind === "media" ? (
+                        <Form.Item label="背景视频 / 图片" rules={[{ required: true, message: "请上传或输入背景媒体地址" }]}>
+                            <Space.Compact style={{ width: "100%" }}>
+                                <Form.Item name="coverUrl" noStyle rules={[{ required: true, message: "请上传或输入背景媒体地址" }]}>
+                                    <Input placeholder="上传后自动回填，也可粘贴视频、动图或图片 URL" />
+                                </Form.Item>
+                                <Button loading={uploadingField === "slideMedia"} icon={<UploadOutlined />} onClick={() => slideMediaInputRef.current?.click()}>
+                                    上传
+                                </Button>
+                            </Space.Compact>
+                        </Form.Item>
+                    ) : (
+                        <>
+                            <Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}><Input /></Form.Item>
+                            <Form.Item name="subtitle" label="副标题"><Input.TextArea rows={2} /></Form.Item>
+                            <Form.Item name="workId" label="关联作品"><Select allowClear options={works.map((item) => ({ label: item.title, value: item.id }))} /></Form.Item>
+                            <Form.Item name="linkUrl" label="跳转链接"><Input placeholder="可填写外链或站内路径" /></Form.Item>
+                        </>
+                    )}
                     <Flex gap={24}>
                         <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
                         <Form.Item name="sort" label="排序"><InputNumber /></Form.Item>
                     </Flex>
                 </Form>
             </Modal>
+            <input ref={workMediaInputRef} hidden type="file" accept="image/*,video/*" onChange={(event) => void uploadHomeMedia(event.currentTarget.files?.[0], "workMedia")} />
+            <input ref={slideMediaInputRef} hidden type="file" accept="image/*,video/*" onChange={(event) => void uploadHomeMedia(event.currentTarget.files?.[0], "slideMedia")} />
         </main>
     );
 }
 
-function WorksTab({ config, theme, updateConfig, model, generateType, setGenerateType, prompt, setPrompt, generating, onGenerate, onAdd, works, columns, loading }: { config: AiConfig; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void; model: string; generateType: HomeWorkType; setGenerateType: (value: HomeWorkType) => void; prompt: string; setPrompt: (value: string) => void; generating: boolean; onGenerate: () => void; onAdd: () => void; works: HomeWork[]; columns: ColumnsType<HomeWork>; loading: boolean }) {
+function WorksTab({ config, theme, updateConfig, model, generateType, setGenerateType, prompt, setPrompt, generating, onGenerate }: { config: AiConfig; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void; model: string; generateType: HomeWorkType; setGenerateType: (value: HomeWorkType) => void; prompt: string; setPrompt: (value: string) => void; generating: boolean; onGenerate: () => void }) {
     return (
         <Flex vertical gap={16}>
             <Card title="生成后发布" variant="borderless">
@@ -265,7 +411,6 @@ function WorksTab({ config, theme, updateConfig, model, generateType, setGenerat
                     {generateType === "image" ? <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} showCount={false} className="max-w-[520px] space-y-4" /> : null}
                 </Flex>
             </Card>
-            <TableCard title="作品列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={onAdd}>手动新增</Button>} loading={loading} columns={columns} data={works} />
         </Flex>
     );
 }
@@ -281,6 +426,11 @@ function TableCard<T extends { id: string }>({ title, extra, loading, columns, d
 function WorkMedia({ item }: { item: HomeWork }) {
     const url = item.coverUrl || item.mediaUrl || "/logo.svg";
     return item.type === "video" && !item.coverUrl ? <video src={item.mediaUrl} className="h-12 w-16 rounded-lg bg-black object-cover" muted /> : <Image src={url} alt={item.title} width={64} height={48} style={{ objectFit: "cover", borderRadius: 8 }} fallback="/logo.svg" />;
+}
+
+function HeroTextMedia({ url, title }: { url?: string; title: string }) {
+    if (!url) return <Tag>仅文案</Tag>;
+    return isVideoUrl(url) ? <video src={url} className="h-12 w-[72px] rounded-lg bg-black object-cover" muted /> : <Image src={url} alt={title} width={72} height={48} style={{ objectFit: "cover", borderRadius: 8 }} fallback="/logo.svg" />;
 }
 
 function WorkTitle({ item }: { item: HomeWork }) {
@@ -325,3 +475,9 @@ function NameManager({ title, items, onSave, onDelete }: { title: string; items:
         </Card>
     );
 }
+
+function isVideoUrl(url?: string) {
+    if (!url) return false;
+    return /\.(mp4|webm|mov|m4v)$/i.test(url);
+}
+

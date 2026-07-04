@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, FileTextOutlined, GlobalOutlined, HomeOutlined, LogoutOutlined, PayCircleOutlined, PictureOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
+import { ApiOutlined, AppstoreOutlined, BellOutlined, CalculatorOutlined, FileTextOutlined, GlobalOutlined, HomeOutlined, LogoutOutlined, PayCircleOutlined, PictureOutlined, SafetyCertificateOutlined, SettingOutlined, TransactionOutlined, UserOutlined } from "@ant-design/icons";
 import { Button, Flex, Layout, Menu, Typography, theme } from "antd";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -25,6 +25,7 @@ const adminMenus = [
     { key: "/admin/site-settings", icon: <GlobalOutlined />, label: "站点管理" },
     { key: "/admin/prompts", icon: <FileTextOutlined />, label: "提示词管理" },
     { key: "/admin/assets", icon: <PictureOutlined />, label: "素材库" },
+    { key: "/admin/ops", icon: <SafetyCertificateOutlined />, label: "运维管理" },
     { key: "/admin/settings", icon: <SettingOutlined />, label: "系统设置" },
 ];
 

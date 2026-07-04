@@ -14,6 +14,10 @@ type adminChannelActionRequest struct {
 	Model   string             `json:"model"`
 }
 
+type adminObjectStorageTestRequest struct {
+	ObjectStorage model.ObjectStorageSetting `json:"objectStorage"`
+}
+
 func Settings(w http.ResponseWriter, r *http.Request) {
 	settings, err := service.PublicSettings()
 	if err != nil {
@@ -58,6 +62,17 @@ func AdminTestChannelModel(w http.ResponseWriter, r *http.Request) {
 	var request adminChannelActionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	result, err := service.AdminTestChannelModel(request.Index, request.Channel, request.Model)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminTestObjectStorage(w http.ResponseWriter, r *http.Request) {
+	var request adminObjectStorageTestRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	result, err := service.TestObjectStorage(request.ObjectStorage)
 	if err != nil {
 		FailError(w, err)
 		return

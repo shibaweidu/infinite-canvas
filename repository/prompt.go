@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/model"
 	"gorm.io/gorm"
@@ -14,19 +15,107 @@ func PromptCategories() []model.PromptCategory {
 	return result
 }
 
-// PromptCategoryByCode 根据分类编码查找内置提示词分类。
+// PromptCategoryByCode 根据分类编码查找提示词分类。
 func PromptCategoryByCode(category string) (model.PromptCategory, bool) {
 	for _, item := range promptCategories {
 		if item.Category == category {
 			return item, true
 		}
 	}
-	return model.PromptCategory{}, false
+	db, err := DB()
+	if err != nil {
+		return model.PromptCategory{}, false
+	}
+	var item model.PromptCategory
+	err = db.Where("category = ?", category).First(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.PromptCategory{}, false
+	}
+	return item, err == nil
 }
 
-// ListPromptCategories 返回内置提示词分类。
+// PromptCategoryHasPrompts 判断分组下是否仍有提示词。
+func PromptCategoryHasPrompts(category string) (bool, error) {
+	db, err := DB()
+	if err != nil {
+		return false, err
+	}
+	var total int64
+	if err := db.Model(&model.Prompt{}).Where("category = ?", category).Count(&total).Error; err != nil {
+		return false, err
+	}
+	return total > 0, nil
+}
+
+// ListPromptCategories 返回内置和自定义提示词分类。
 func ListPromptCategories() ([]model.PromptCategory, error) {
-	return PromptCategories(), nil
+	categories := PromptCategories()
+	db, err := DB()
+	if err != nil {
+		return categories, nil
+	}
+	seen := map[string]int{}
+	for i, item := range categories {
+		seen[item.Category] = i
+	}
+	var customCategories []model.PromptCategory
+	if err := db.Find(&customCategories).Error; err == nil {
+		for _, item := range customCategories {
+			if item.Category == "" {
+				continue
+			}
+			if index, ok := seen[item.Category]; ok {
+				categories[index].UpdatedAt = item.UpdatedAt
+				continue
+			}
+			seen[item.Category] = len(categories)
+			categories = append(categories, item)
+		}
+	}
+	type categoryTime struct {
+		Category  string
+		UpdatedAt string
+	}
+	var times []categoryTime
+	if err := db.Model(&model.Prompt{}).
+		Select("category, MAX(COALESCE(NULLIF(updated_at, ''), created_at)) AS updated_at").
+		Where("category <> ''").
+		Group("category").
+		Scan(&times).Error; err != nil {
+		return categories, nil
+	}
+	updatedAt := map[string]string{}
+	for _, item := range times {
+		updatedAt[item.Category] = item.UpdatedAt
+	}
+	for i := range categories {
+		categories[i].UpdatedAt = updatedAt[categories[i].Category]
+	}
+	for category, updated := range updatedAt {
+		if _, ok := seen[category]; !ok {
+			seen[category] = len(categories)
+			categories = append(categories, model.PromptCategory{Category: category, Name: category, UpdatedAt: updated})
+		}
+	}
+	return categories, nil
+}
+
+// SavePromptCategory 保存自定义提示词分组。
+func SavePromptCategory(item model.PromptCategory) (model.PromptCategory, error) {
+	db, err := DB()
+	if err != nil {
+		return item, err
+	}
+	return item, db.Save(&item).Error
+}
+
+// DeletePromptCategory 删除自定义提示词分组。
+func DeletePromptCategory(category string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Delete(&model.PromptCategory{}, "category = ? AND remote = ?", category, false).Error
 }
 
 // ListPrompts 按查询条件返回提示词分页列表。
@@ -114,6 +203,7 @@ func ReplacePromptCategory(category model.PromptCategory, items []model.Prompt) 
 	if err != nil {
 		return err
 	}
+	now := time.Now().Format(time.RFC3339)
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("category = ?", category.Category).Delete(&model.Prompt{}).Error; err != nil {
 			return err
@@ -124,6 +214,12 @@ func ReplacePromptCategory(category model.PromptCategory, items []model.Prompt) 
 		for i := range items {
 			items[i].Category = category.Category
 			items[i].GithubURL = ""
+			if items[i].CreatedAt == "" {
+				items[i].CreatedAt = now
+			}
+			if items[i].UpdatedAt == "" {
+				items[i].UpdatedAt = now
+			}
 		}
 		return tx.Create(&items).Error
 	})

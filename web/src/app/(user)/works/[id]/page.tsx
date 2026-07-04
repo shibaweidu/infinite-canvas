@@ -42,7 +42,7 @@ export default function WorkDetailPage() {
     return (
         <main className="h-full overflow-y-auto bg-[#f7f7f4] px-4 py-6 text-neutral-950 dark:bg-[#111111] dark:text-neutral-100 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-7xl">
-                <Link href="/" className="mb-5 inline-flex items-center gap-2 text-sm text-neutral-500 hover:text-neutral-950 dark:hover:text-white">
+                <Link href="/" className="mb-5 inline-flex cursor-pointer items-center gap-2 text-sm text-neutral-500 hover:text-neutral-950 dark:hover:text-white">
                     <ArrowLeft className="size-4" />
                     返回首页
                 </Link>
@@ -90,4 +90,3 @@ function formatTime(value: string) {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
-

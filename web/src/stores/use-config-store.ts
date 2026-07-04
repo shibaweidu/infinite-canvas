@@ -177,8 +177,18 @@ export function selectableModelsByCapability(config: AiConfig, capability?: Mode
 }
 
 export function modelOptionName(value: string) {
-    const parts = value.split("||");
-    return (parts.length >= 3 ? parts[parts.length - 1] : value).trim();
+    const text = value.trim();
+    const parts = text.split("||");
+    if (parts.length > 1) return parts[parts.length - 1].trim();
+    if (/^https?:\/\//i.test(text)) {
+        try {
+            const url = new URL(text);
+            return decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "").trim() || url.hostname;
+        } catch {
+            return text.replace(/^https?:\/\//i, "").split(/[/?#]/)[0] || text;
+        }
+    }
+    return text;
 }
 
 export function normalizeModelOptionValue(value?: string) {

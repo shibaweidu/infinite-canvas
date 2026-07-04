@@ -38,49 +38,8 @@ type ProjectBriefSettings = {
 
 const defaultGenreOptions = ["科幻", "悬疑", "爱情", "冒险", "奇幻", "都市", "广告", "儿童动画", "纪录片"];
 const durationOptions = ["15秒", "30秒", "60秒", "90秒", "3分钟", "自定义"];
-const defaultStyleCategories = ["我的风格", "最近使用", "立体风格", "国风", "IP风格", "欧美风格", "日系风格", "插画风格", "韩系", "可爱Q版"];
-const defaultStyleLibrary: StyleLibraryItem[] = [
-    {
-        name: "KpopCG",
-        category: "韩系",
-        prompt: "韩系偶像写真质感，精致妆造，高饱和舞台光，商业 CG 渲染。",
-        image: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpo9im1_39c786142b2473e8.webp",
-        isNew: true,
-        previews: [
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnojtb8n_3114dbe29e4fedbc.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpo9im1_39c786142b2473e8.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnojr8e9_5d62e6aa1dc41c5e.webp",
-        ],
-    },
-    {
-        name: "游戏CG",
-        category: "立体风格",
-        prompt: "高品质游戏 CG，电影级布光，细节丰富，空间层次清晰。",
-        image: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FNhe9bnBOkoh8LSxYaG7cMct7nDg.webp",
-        previews: [
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmn2tgtajad1a164ac3985264.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FEW0XbyTnUoZX44xcI1vcRtMcnjd.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2FSnaobGxSHoLVIXxFlOUc5QgEnBc.webp",
-        ],
-    },
-    {
-        name: "像素农场",
-        category: "可爱Q版",
-        prompt: "可爱像素农场风，Q 版角色，明亮色彩，轻松治愈的游戏画面。",
-        image: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps4e2n_f772bf318499f660.webp",
-        isNew: true,
-        previews: [
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnpsa9ba_121507cc8417d426.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps84h8_04377ac124a68cc7.webp",
-            "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmnps8fah_869571d3fa0df2a2.webp",
-        ],
-    },
-    { name: "国风水墨", category: "国风", prompt: "国风水墨，美术留白，柔和宣纸肌理，东方诗意构图。", image: "/api-proxy/asset?url=https%3A%2F%2Fstatic-oiioii-sg.hogiai.cn%2Fstyle_recommends%2Fmmybot0eaa74e8f640da0bf4.webp" },
-    { name: "电影感", category: "欧美风格", prompt: "电影级摄影，真实光影，浅景深，情绪化色彩分级。", image: "" },
-    { name: "皮克斯3D", category: "IP风格", prompt: "皮克斯式 3D 动画质感，圆润造型，表情夸张，温暖光线。", image: "" },
-    { name: "赛博朋克", category: "插画风格", prompt: "赛博朋克霓虹城市，高对比光影，未来科技元素，雨夜反射。", image: "" },
-    { name: "日系动画", category: "日系风格", prompt: "日系动画分镜，清爽线条，柔和天空光，细腻青春氛围。", image: "" },
-];
+const defaultStyleCategories: string[] = [];
+const defaultStyleLibrary: StyleLibraryItem[] = [];
 
 const defaultStoryPresets = [
     { title: "科幻追逐", text: "一个年轻程序员深夜发现自己开发的 AI 正在现实世界中追捕他，他必须在黎明前关闭系统。" },
@@ -402,16 +361,16 @@ function normalizeProjectBrief(brief: CanvasProjectBrief | undefined, settings: 
 }
 
 export function normalizeProjectBriefSettings(settings?: Partial<AdminProjectBriefSettings>): ProjectBriefSettings {
-    const visualStyles = (settings?.visualStyles ? settings.visualStyles : defaultProjectBriefSettings.visualStyles)
+    const visualStyles = (settings?.visualStyles || [])
         .map((item) => ({
             name: item.name?.trim() || "",
             category: item.category?.trim() || "",
             prompt: item.prompt?.trim() || "",
             image: "coverUrl" in item ? item.coverUrl?.trim() || "" : item.image?.trim() || "",
-            previews: "previewUrls" in item ? item.previewUrls || [] : item.previews || [],
+            previews: [],
             isNew: "isNew" in item ? item.isNew : false,
         }))
-        .filter((item) => item.name);
+        .filter((item) => item.name && item.image);
     return {
         genres: uniqueStrings(settings?.genres ? settings.genres : defaultProjectBriefSettings.genres),
         styleCategories: uniqueStrings(settings?.styleCategories ? settings.styleCategories : defaultProjectBriefSettings.styleCategories),

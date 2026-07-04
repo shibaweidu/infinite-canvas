@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/basketikun/infinite-canvas/model"
+	"github.com/basketikun/infinite-canvas/service"
 )
 
 type response struct {
@@ -25,6 +26,7 @@ func Fail(w http.ResponseWriter, msg string) {
 
 func FailError(w http.ResponseWriter, err error) {
 	log.Printf("request failed: %v", err)
+	service.RecordErrorLog(model.ErrorLog{Source: "handler", Message: err.Error()})
 	if safe, ok := err.(interface{ SafeMessage() string }); ok {
 		Fail(w, safe.SafeMessage())
 		return

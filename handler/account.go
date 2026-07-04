@@ -11,6 +11,7 @@ import (
 )
 
 const announcementImageMaxBytes = 10 << 20
+const adminHomeMediaMaxBytes = 120 << 20
 
 type paymentOrderRequest struct {
 	Type   model.PaymentOrderType `json:"type"`
@@ -164,6 +165,42 @@ func AdminUploadAnnouncementImage(w http.ResponseWriter, r *http.Request) {
 		mimeType = http.DetectContentType(data)
 	}
 	result, err := service.UploadAnnouncementImage(header.Filename, mimeType, data)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminUploadHomeMedia(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, adminHomeMediaMaxBytes+1)
+	if err := r.ParseMultipartForm(adminHomeMediaMaxBytes); err != nil {
+		Fail(w, "媒体文件过大或上传格式不正确")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		Fail(w, "请上传图片、动图或视频")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		Fail(w, "媒体文件读取失败")
+		return
+	}
+	if len(data) > adminHomeMediaMaxBytes {
+		Fail(w, "媒体文件不能超过 120MB")
+		return
+	}
+	mimeType := strings.TrimSpace(strings.Split(header.Header.Get("Content-Type"), ";")[0])
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = http.DetectContentType(data)
+	}
+	result, err := service.UploadHomeMedia(header.Filename, mimeType, data)
 	if err != nil {
 		FailError(w, err)
 		return

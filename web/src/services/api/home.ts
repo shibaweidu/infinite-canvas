@@ -2,9 +2,11 @@ import { apiGet, compactApiParams } from "@/services/api/request";
 
 export type HomeWorkStatus = "draft" | "pending" | "published" | "hidden";
 export type HomeWorkType = "image" | "video";
+export type HomeSlideKind = "text" | "media";
 
 export type HomeSlide = {
     id: string;
+    kind: HomeSlideKind;
     title: string;
     subtitle: string;
     coverUrl: string;
@@ -82,4 +84,3 @@ export async function fetchHomeWorks(query: HomeWorkQuery = {}) {
 export async function fetchHomeWork(id: string) {
     return apiGet<HomeWork>(`/api/home/works/${encodeURIComponent(id)}`);
 }
-

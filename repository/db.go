@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/basketikun/infinite-canvas/config"
 	"github.com/basketikun/infinite-canvas/model"
@@ -22,12 +23,9 @@ import (
 
 var promptCategories = []model.PromptCategory{
 	{Category: "system", Name: "系统", Description: "系统提示词分类"},
-	{Category: "gpt-image-2-prompts", Name: "GPT Image 2 Prompts", Description: "EvoLinkAI 的 GPT Image 2 案例提示词分类", GithubURL: "https://github.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts", Remote: true},
 	{Category: "awesome-gpt-image", Name: "Awesome GPT Image", Description: "ZeroLu 的中文 GPT Image 提示词分类", GithubURL: "https://github.com/ZeroLu/awesome-gpt-image", Remote: true},
-	{Category: "awesome-gpt4o-image-prompts", Name: "Awesome GPT4o Image Prompts", Description: "ImgEdify 的 GPT-4o 图像提示词分类", GithubURL: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts", Remote: true},
 	{Category: "youmind-gpt-image-2", Name: "YouMind GPT Image 2", Description: "YouMind OpenLab 的 GPT Image 2 中文提示词分类", GithubURL: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2", Remote: true},
 	{Category: "youmind-nano-banana-pro", Name: "YouMind Nano Banana Pro", Description: "YouMind OpenLab 的 Nano Banana Pro 中文提示词分类", GithubURL: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts", Remote: true},
-	{Category: "davidwu-gpt-image2-prompts", Name: "awesome-gpt-image2-prompts", Description: "davidwuw0811-boop 整理的 GPT Image 2 提示词分类", GithubURL: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts", Remote: true},
 }
 
 var (
@@ -63,11 +61,13 @@ func DB() (*gorm.DB, error) {
 		if dbErr != nil {
 			return
 		}
+		configureConnectionPool(db)
 		dbErr = db.AutoMigrate(
 			&model.User{},
 			&model.CreditLog{},
 			&model.CreditBatch{},
 			&model.Prompt{},
+			&model.PromptCategory{},
 			&model.Asset{},
 			&model.Setting{},
 			&model.Announcement{},
@@ -79,9 +79,28 @@ func DB() (*gorm.DB, error) {
 			&model.HomeWork{},
 			&model.HomeCategory{},
 			&model.HomeTag{},
+			&model.AdminOperationLog{},
+			&model.SystemTask{},
+			&model.ErrorLog{},
 		)
 	})
 	return db, dbErr
+}
+
+func configureConnectionPool(database *gorm.DB) {
+	sqlDB, err := database.DB()
+	if err != nil {
+		return
+	}
+	if config.Cfg.DatabaseMaxOpen > 0 {
+		sqlDB.SetMaxOpenConns(config.Cfg.DatabaseMaxOpen)
+	}
+	if config.Cfg.DatabaseMaxIdle > 0 {
+		sqlDB.SetMaxIdleConns(config.Cfg.DatabaseMaxIdle)
+	}
+	if config.Cfg.DatabaseMaxLifetime > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(config.Cfg.DatabaseMaxLifetime) * time.Minute)
+	}
 }
 
 func dialector(driver string, dsn string) gorm.Dialector {

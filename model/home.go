@@ -2,6 +2,7 @@ package model
 
 type HomeWorkStatus string
 type HomeWorkType string
+type HomeSlideKind string
 
 const (
 	HomeWorkStatusDraft     HomeWorkStatus = "draft"
@@ -11,10 +12,14 @@ const (
 
 	HomeWorkTypeImage HomeWorkType = "image"
 	HomeWorkTypeVideo HomeWorkType = "video"
+
+	HomeSlideKindText  HomeSlideKind = "text"
+	HomeSlideKindMedia HomeSlideKind = "media"
 )
 
 type HomeSlide struct {
 	ID          string `json:"id" gorm:"primaryKey"`
+	Kind        HomeSlideKind `json:"kind" gorm:"index"`
 	Title       string `json:"title"`
 	Subtitle    string `json:"subtitle" gorm:"type:text"`
 	CoverURL    string `json:"coverUrl"`
@@ -71,4 +76,3 @@ type HomeWorkList struct {
 	Tags       []HomeTag      `json:"tags"`
 	Total      int            `json:"total"`
 }
-

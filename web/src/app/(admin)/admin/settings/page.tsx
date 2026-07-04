@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { EditorView } from "@uiw/react-codemirror";
 
-import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
+import { fetchAdminSettings, fetchChannelModels, saveAdminSettings, testAdminObjectStorage, testChannelModel, type AdminModelChannel, type AdminModelCost, type AdminSettings } from "@/services/api/admin";
 import { useUserStore } from "@/stores/use-user-store";
 
 const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), { ssr: false });
@@ -47,7 +47,10 @@ const emptySettings: AdminSettings = {
         site: {
             logoUrl: "/logo.svg",
             name: "无限画布",
+            title: "无限画布",
+            description: "一个无限画布创作工具",
             slogan: "AI 创意工作台",
+            worksEnabled: true,
             navigation: [
                 { id: "canvas", label: "我的画布", path: "/canvas", enabled: true, sort: 10 },
                 { id: "workbench", label: "创作工作台", path: "/workbench", enabled: true, sort: 20 },
@@ -59,6 +62,7 @@ const emptySettings: AdminSettings = {
     private: {
         channels: [],
         promptSync: { enabled: true, cron: "*/5 * * * *" },
+        taskQueue: { defaultUserConcurrency: 2 },
         auth: { email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", fromEmail: "", fromName: "", subject: "邮箱验证码" }, linuxDo: { clientId: "", clientSecret: "" }, google: { clientId: "", clientSecret: "" } },
         objectStorage: { enabled: false, provider: "s3", endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: "", publicUrl: "", prefix: "", forcePathStyle: false },
     },
@@ -95,6 +99,7 @@ export default function AdminSettingsPage() {
     const [isFetchingChannelModels, setIsFetchingChannelModels] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isTestingObjectStorage, setIsTestingObjectStorage] = useState(false);
     const [modelCosts, setModelCosts] = useState<AdminModelCost[]>([]);
     const [knownModels, setKnownModels] = useState<string[]>([]);
     const publicModels = Form.useWatch(["public", "modelChannel", "availableModels"], form) || [];
@@ -133,6 +138,19 @@ export default function AdminSettingsPage() {
     useEffect(() => {
         void loadSettings();
     }, [token]);
+
+    useEffect(() => {
+        const searchParams = new URLSearchParams(window.location.search);
+        const tab = searchParams.get("tab");
+        const section = searchParams.get("section");
+        if (tab === "private" || section === "taskQueue") {
+            setActiveTab("private");
+            setEditorMode((current) => ({ ...current, private: "visual" }));
+        }
+        if (section) {
+            window.setTimeout(() => document.getElementById(`settings-${section}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+        }
+    }, []);
 
     const changeTab = (nextTab: SettingsTabKey) => {
         setActiveTab(nextTab);
@@ -355,6 +373,20 @@ export default function AdminSettingsPage() {
         }
     };
 
+    const testObjectStorage = async () => {
+        if (!token) return;
+        const objectStorage = normalizePrivateSetting(form.getFieldValue(["private"]) as Partial<AdminSettings["private"]>).objectStorage;
+        setIsTestingObjectStorage(true);
+        try {
+            const result = await testAdminObjectStorage(token, objectStorage);
+            message.success(result);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "对象存储测试失败");
+        } finally {
+            setIsTestingObjectStorage(false);
+        }
+    };
+
     const testChannel = testChannelIndex === null ? null : normalizeChannel(channels[testChannelIndex]);
     const testModels = (testChannel?.models || []).filter((model) => model.toLowerCase().includes(testKeyword.trim().toLowerCase()));
 
@@ -474,8 +506,23 @@ export default function AdminSettingsPage() {
                                                     </Form.Item>
                                                 </Col>
                                                 <Col xs={24} md={8}>
+                                                    <Form.Item name={["public", "site", "title"]} label="网站标题">
+                                                        <Input placeholder="无限画布" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={16}>
+                                                    <Form.Item name={["public", "site", "description"]} label="网站描述">
+                                                        <Input.TextArea rows={3} placeholder="一个无限画布创作工具" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={8}>
                                                     <Form.Item name={["public", "site", "slogan"]} label="广告语">
                                                         <Input placeholder="AI 创意工作台" />
+                                                    </Form.Item>
+                                                </Col>
+                                                <Col xs={24} md={8}>
+                                                    <Form.Item name={["public", "site", "worksEnabled"]} label="首页作品展示" valuePropName="checked">
+                                                        <Switch />
                                                     </Form.Item>
                                                 </Col>
                                             </Row>
@@ -733,7 +780,15 @@ export default function AdminSettingsPage() {
                                         </Row>
                                     </Flex>
                                 </Card>
-                                <Card size="small" title="对象存储">
+                                <Card
+                                    size="small"
+                                    title="对象存储"
+                                    extra={
+                                        <Button size="small" loading={isTestingObjectStorage} onClick={() => void testObjectStorage()}>
+                                            测试连接
+                                        </Button>
+                                    }
+                                >
                                     <Row gutter={16}>
                                         <Col xs={24} md={6}>
                                             <Form.Item name={["private", "objectStorage", "enabled"]} label="开启对象存储" valuePropName="checked">
@@ -752,22 +807,22 @@ export default function AdminSettingsPage() {
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={6}>
-                                            <Form.Item name={["private", "objectStorage", "region"]} label="Region">
-                                                <Input placeholder="例如 ap-southeast-1" />
+                                            <Form.Item name={["private", "objectStorage", "region"]} label="Region" extra="Cloudflare R2 可填 auto；阿里云 OSS / 腾讯云 COS 按实际地域填写。">
+                                                <Input placeholder="例如 ap-southeast-1 或 auto" />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={6}>
-                                            <Form.Item name={["private", "objectStorage", "bucket"]} label="Bucket">
+                                            <Form.Item name={["private", "objectStorage", "bucket"]} label="Bucket" extra="填写 Bucket 名称，不要带路径。">
                                                 <Input placeholder="Bucket 名称" />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={12}>
-                                            <Form.Item name={["private", "objectStorage", "endpoint"]} label="Endpoint">
+                                            <Form.Item name={["private", "objectStorage", "endpoint"]} label="Endpoint" extra="填写 S3 兼容 Endpoint，例如 R2、OSS、COS 的 API 访问地址，不是 CDN 地址。">
                                                 <Input placeholder="https://s3.example.com" />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={12}>
-                                            <Form.Item name={["private", "objectStorage", "publicUrl"]} label="公开访问地址">
+                                            <Form.Item name={["private", "objectStorage", "publicUrl"]} label="公开访问地址" extra="填写可公网访问的 Bucket 域名或 CDN 域名，上传后的文件会用这个地址拼接访问。">
                                                 <Input placeholder="https://cdn.example.com" />
                                             </Form.Item>
                                         </Col>
@@ -782,27 +837,36 @@ export default function AdminSettingsPage() {
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={4}>
-                                            <Form.Item name={["private", "objectStorage", "prefix"]} label="路径前缀">
+                                            <Form.Item name={["private", "objectStorage", "prefix"]} label="路径前缀" extra="可选，例如 uploads；不要以 / 开头或结尾。">
                                                 <Input placeholder="uploads" />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={4}>
-                                            <Form.Item name={["private", "objectStorage", "forcePathStyle"]} label="Path Style" valuePropName="checked">
+                                            <Form.Item name={["private", "objectStorage", "forcePathStyle"]} label="Path Style" valuePropName="checked" extra={"MinIO\u3001\u90e8\u5206 S3 \u517c\u5bb9\u670d\u52a1\u9700\u8981\u5f00\u542f\uff1b\u4e91\u5382\u5546\u9ed8\u8ba4\u53ef\u5148\u5173\u95ed\u3002"}>
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
                                     </Row>
                                 </Card>
-                                <Card size="small" title="提示词定时同步">
+                                <Card size="small" title={"\u63d0\u793a\u8bcd\u5b9a\u65f6\u540c\u6b65"}>
                                     <Row gutter={16} align="middle">
                                         <Col xs={24} md={8}>
-                                            <Form.Item name={["private", "promptSync", "enabled"]} label="开启定时同步" valuePropName="checked">
+                                            <Form.Item name={["private", "promptSync", "enabled"]} label={"\u5f00\u542f\u5b9a\u65f6\u540c\u6b65"} valuePropName="checked">
                                                 <Switch />
                                             </Form.Item>
                                         </Col>
                                         <Col xs={24} md={16}>
-                                            <Form.Item name={["private", "promptSync", "cron"]} label="Cron 表达式" extra="默认每 5 分钟同步内置 GitHub 远程提示词源">
+                                            <Form.Item name={["private", "promptSync", "cron"]} label={"Cron \u8868\u8fbe\u5f0f"} extra={"\u9ed8\u8ba4\u6bcf 5 \u5206\u949f\u540c\u6b65\u5df2\u542f\u7528\u7684\u63d0\u793a\u8bcd\u6765\u6e90"}>
                                                 <Input placeholder="*/5 * * * *" />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </Card>
+                                <Card id="settings-taskQueue" size="small" title="任务队列">
+                                    <Row gutter={16} align="middle">
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "defaultUserConcurrency"]} label="默认用户并发数" extra="用户未单独设置时使用该值，范围 1-50">
+                                                <InputNumber min={1} max={50} precision={0} style={{ width: "100%" }} />
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -1130,7 +1194,10 @@ function normalizeSiteSetting(setting: Partial<AdminSettings["public"]["site"]> 
     return {
         logoUrl: setting.logoUrl?.trim() || "/logo.svg",
         name: setting.name?.trim() || "无限画布",
+        title: setting.title?.trim() || setting.name?.trim() || "无限画布",
+        description: setting.description?.trim() || "一个无限画布创作工具",
         slogan: setting.slogan?.trim() || "",
+        worksEnabled: setting.worksEnabled !== false,
         navigation: (navigation || [])
             .map((item, index) => ({
                 id: item.id?.trim() || `nav-${index + 1}`,
@@ -1194,6 +1261,9 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
         promptSync: {
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "*/5 * * * *",
+        },
+        taskQueue: {
+            defaultUserConcurrency: Math.min(Math.max(Number(setting.taskQueue?.defaultUserConcurrency) || 2, 1), 50),
         },
         auth: {
             email: {

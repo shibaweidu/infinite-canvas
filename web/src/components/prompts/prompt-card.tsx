@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
@@ -23,6 +23,12 @@ export function PromptCard({
     actionType?: "text" | "primary";
     extraAction?: ReactNode;
 }) {
+    const [coverFailed, setCoverFailed] = useState(false);
+
+    useEffect(() => {
+        setCoverFailed(false);
+    }, [item.coverUrl]);
+
     return (
         <Card
             hoverable
@@ -30,7 +36,14 @@ export function PromptCard({
             styles={{ body: { padding: 0 } }}
             cover={
                 <button type="button" className="block w-full text-left" onClick={onOpen}>
-                    <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
+                    <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 dark:bg-stone-900">
+                        <img
+                            src={coverFailed || !item.coverUrl ? "/logo.svg" : item.coverUrl}
+                            alt={item.title}
+                            className="h-full w-full object-cover"
+                            onError={() => setCoverFailed(true)}
+                        />
+                    </div>
                 </button>
             }
         >

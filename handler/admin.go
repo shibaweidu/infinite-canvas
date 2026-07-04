@@ -21,6 +21,25 @@ func AdminPromptCategories(w http.ResponseWriter, r *http.Request) {
 	OK(w, service.ListPromptCategories())
 }
 
+func AdminSavePromptCategory(w http.ResponseWriter, r *http.Request) {
+	var item model.PromptCategory
+	_ = json.NewDecoder(r.Body).Decode(&item)
+	result, err := service.SavePromptCategory(item)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminDeletePromptCategory(w http.ResponseWriter, r *http.Request, category string) {
+	if err := service.DeletePromptCategory(category); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
 func AdminPrompts(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListPrompts(parseQuery(r))
 	if err != nil {

@@ -445,6 +445,12 @@ func SaveUser(user model.User, password string) (model.User, error) {
 	if user.Status == "" {
 		user.Status = model.UserStatusActive
 	}
+	if user.TaskConcurrency < 0 {
+		user.TaskConcurrency = 0
+	}
+	if user.TaskConcurrency > 50 {
+		user.TaskConcurrency = 50
+	}
 	if saved, ok, err := repository.GetUserByUsername(user.Username); err != nil {
 		return user, err
 	} else if ok && saved.ID != user.ID {
@@ -476,6 +482,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 		user.AvatarURL = saved.AvatarURL
 		user.Credits = saved.Credits
 		user.Extra = saved.Extra
+		if user.TaskConcurrency < 0 {
+			user.TaskConcurrency = saved.TaskConcurrency
+		}
 		if user.AffCode == "" {
 			user.AffCode = saved.AffCode
 		}
@@ -736,6 +745,9 @@ func newAffCode() string {
 func normalizeUserDefaults(user *model.User) {
 	if user.Status == "" {
 		user.Status = model.UserStatusActive
+	}
+	if user.TaskConcurrency < 0 {
+		user.TaskConcurrency = 0
 	}
 	if user.AffCode == "" {
 		user.AffCode = newAffCode()

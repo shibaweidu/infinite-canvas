@@ -11,13 +11,17 @@ import { normalizeSettings } from "../model-management";
 
 const panelClass = "rounded-[24px] border border-white/[0.08] bg-[#11141b]";
 const inputClass = "h-9 w-full rounded-xl border border-white/[0.08] bg-[#1b1f29] px-3 text-sm text-white outline-none placeholder:text-[#667085] focus:border-white/45";
+const textareaClass = "min-h-20 w-full resize-none rounded-xl border border-white/[0.08] bg-[#1b1f29] px-3 py-2 text-sm text-white outline-none placeholder:text-[#667085] focus:border-white/45";
 const primaryButtonClass = "inline-flex h-9 items-center justify-center rounded-xl border border-white/[0.16] bg-[#2b303b] px-4 text-sm font-medium text-white transition hover:bg-[#363d4a] disabled:cursor-not-allowed disabled:opacity-60";
 const outlineButtonClass = "inline-flex h-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-[#cfd7e6] transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-60";
 
 const defaultSite: AdminSiteSettings = {
     logoUrl: "/logo.svg",
     name: "无限画布",
+    title: "无限画布",
+    description: "一个无限画布创作工具",
     slogan: "AI 创意工作台",
+    worksEnabled: true,
     navigation: [
         { id: "canvas", label: "我的画布", path: "/canvas", enabled: true, sort: 10 },
         { id: "workbench", label: "创作工作台", path: "/workbench", enabled: true, sort: 20 },
@@ -99,7 +103,7 @@ export default function AdminSiteSettingsPage() {
                 <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                     <div>
                         <h1 className="text-[26px] font-semibold tracking-tight text-white">站点管理</h1>
-                        <p className="mt-2 text-sm text-[#8f97aa]">管理前台 LOGO、网站名称、广告语和顶部导航显示。</p>
+                        <p className="mt-2 text-sm text-[#8f97aa]">管理前台 LOGO、网站名称、网站标题、网站描述、广告语、首页作品展示和顶部导航显示。</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         <button className={outlineButtonClass} onClick={() => void loadSettings()} disabled={loading}>
@@ -136,8 +140,17 @@ export default function AdminSiteSettingsPage() {
                             <Field label="网站名称">
                                 <input className={inputClass} value={site.name} onChange={(event) => patchSite({ name: event.target.value })} placeholder="无限画布" />
                             </Field>
+                            <Field label="网站标题">
+                                <input className={inputClass} value={site.title} onChange={(event) => patchSite({ title: event.target.value })} placeholder="无限画布" />
+                            </Field>
+                            <Field label="网站描述">
+                                <textarea className={textareaClass} value={site.description} onChange={(event) => patchSite({ description: event.target.value })} placeholder="一个无限画布创作工具" />
+                            </Field>
                             <Field label="广告语">
                                 <input className={inputClass} value={site.slogan} onChange={(event) => patchSite({ slogan: event.target.value })} placeholder="AI 创意工作台" />
+                            </Field>
+                            <Field label="首页作品展示">
+                                <Toggle checked={site.worksEnabled} onChange={(worksEnabled) => patchSite({ worksEnabled })} />
                             </Field>
                         </div>
                     </section>
@@ -150,7 +163,7 @@ export default function AdminSiteSettingsPage() {
                             </div>
                             <button className={outlineButtonClass} onClick={addNav}>
                                 <Plus className="mr-1.5 h-4 w-4" />
-                                新增导航选项
+                                新增导航项
                             </button>
                         </div>
                         <div className="space-y-3 p-5">
@@ -207,7 +220,10 @@ function normalizeSite(site?: Partial<AdminSiteSettings>): AdminSiteSettings {
     return {
         logoUrl: site?.logoUrl?.trim() || "/logo.svg",
         name: site?.name?.trim() || "无限画布",
+        title: site?.title?.trim() || site?.name?.trim() || "无限画布",
+        description: site?.description?.trim() || "一个无限画布创作工具",
         slogan: site?.slogan?.trim() || "",
+        worksEnabled: site?.worksEnabled !== false,
         navigation: (navigation || [])
             .map((item, index) => ({
                 id: item.id?.trim() || `nav-${index + 1}`,

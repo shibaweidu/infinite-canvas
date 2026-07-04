@@ -19,11 +19,15 @@ func SaveHomeSlide(item model.HomeSlide) (model.HomeSlide, error) {
 	item.LinkURL = strings.TrimSpace(item.LinkURL)
 	item.WorkID = strings.TrimSpace(item.WorkID)
 	item.PublishedAt = strings.TrimSpace(item.PublishedAt)
-	if item.Title == "" {
-		return item, safeMessageError{message: "幻灯片标题不能为空"}
+	if item.Kind == "" {
+		item.Kind = model.HomeSlideKindText
 	}
-	if item.CoverURL == "" {
-		return item, safeMessageError{message: "幻灯片封面不能为空"}
+	if item.Kind == model.HomeSlideKindMedia {
+		if item.CoverURL == "" {
+			return item, safeMessageError{message: "顶部背景媒体不能为空"}
+		}
+	} else if item.Title == "" {
+		return item, safeMessageError{message: "首页文案标题不能为空"}
 	}
 	current := now()
 	if item.ID == "" {
@@ -168,4 +172,3 @@ func cleanStringList(items []string) []string {
 	}
 	return result
 }
-

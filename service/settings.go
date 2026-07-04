@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,7 +118,18 @@ func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
 	if setting.Name == "" {
 		setting.Name = defaults.Name
 	}
+	setting.Title = strings.TrimSpace(setting.Title)
+	if setting.Title == "" {
+		setting.Title = setting.Name
+	}
+	setting.Description = strings.TrimSpace(setting.Description)
+	if setting.Description == "" {
+		setting.Description = defaults.Description
+	}
 	setting.Slogan = strings.TrimSpace(setting.Slogan)
+	if setting.WorksEnabled == nil {
+		setting.WorksEnabled = defaults.WorksEnabled
+	}
 	if setting.Navigation == nil {
 		setting.Navigation = defaults.Navigation
 		return setting
@@ -165,9 +177,12 @@ func normalizeSiteSetting(setting model.SiteSetting) model.SiteSetting {
 
 func defaultSiteSetting() model.SiteSetting {
 	return model.SiteSetting{
-		LogoURL: "/logo.svg",
-		Name:    "无限画布",
-		Slogan:  "AI 创意工作台",
+		LogoURL:      "/logo.svg",
+		Name:         "无限画布",
+		Title:        "无限画布",
+		Description:  "一个无限画布创作工具",
+		Slogan:       "AI 创意工作台",
+		WorksEnabled: boolPtr(true),
 		Navigation: []model.SiteNavigationItem{
 			{ID: "canvas", Label: "我的画布", Path: "/canvas", Enabled: true, Sort: 10},
 			{ID: "workbench", Label: "创作工作台", Path: "/workbench", Enabled: true, Sort: 20},
@@ -176,6 +191,10 @@ func defaultSiteSetting() model.SiteSetting {
 			{ID: "announcements", Label: "公告", Path: "/announcements", Enabled: true, Sort: 50},
 		},
 	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func normalizeProjectBriefSetting(setting model.ProjectBriefSetting) model.ProjectBriefSetting {
@@ -337,7 +356,7 @@ func publicObjectStorageSetting(setting model.ObjectStorageSetting) model.Public
 }
 
 func modelItemCost(item model.ModelItem, channel model.ModelChannel) model.ModelCost {
-	providerName := strings.TrimSpace(channel.Name)
+	providerName := publicModelProviderName(channel)
 	return normalizeModelCost(model.ModelCost{
 		Model:               publicModelID(channel, item),
 		UpstreamModel:       item.Model,
@@ -346,7 +365,7 @@ func modelItemCost(item model.ModelItem, channel model.ModelChannel) model.Model
 		ThumbnailURL:        item.ThumbnailURL,
 		ProviderName:        providerName,
 		ProviderEndpoint:    "",
-		ProviderDisplayName: firstNonEmpty(item.ProviderDisplayName, providerName),
+		ProviderDisplayName: publicModelProviderDisplayName(item.ProviderDisplayName, providerName),
 		Description:         item.Description,
 		Tags:                item.Tags,
 		Credits:             item.Credits,
@@ -401,11 +420,59 @@ func joinUniqueLabels(values ...string) string {
 }
 
 func publicModelID(channel model.ModelChannel, item model.ModelItem) string {
-	parts := []string{
-		strings.TrimSpace(channel.Name),
-		strings.TrimSpace(item.Model),
+	prefix := publicModelChannelLabel(channel)
+	modelName := strings.TrimSpace(item.Model)
+	if prefix == "" {
+		return modelName
 	}
-	return strings.Join(parts, "||")
+	return strings.Join([]string{prefix, modelName}, "||")
+}
+
+func publicModelProviderName(channel model.ModelChannel) string {
+	name := strings.TrimSpace(channel.Name)
+	if isSensitiveEndpointLabel(name) {
+		return ""
+	}
+	return name
+}
+
+func publicModelProviderDisplayName(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if isSensitiveEndpointLabel(value) {
+		value = ""
+	}
+	return firstNonEmpty(value, fallback)
+}
+
+func publicModelChannelLabel(channel model.ModelChannel) string {
+	name := strings.TrimSpace(channel.Name)
+	if name != "" && !isSensitiveEndpointLabel(name) {
+		return name
+	}
+	seed := normalizeModelChannelBaseURL(channel.BaseURL)
+	if seed == "" {
+		seed = name
+	}
+	if seed == "" {
+		return ""
+	}
+	sum := sha1.Sum([]byte(seed))
+	return fmt.Sprintf("channel-%x", sum[:4])
+}
+
+func isSensitiveEndpointLabel(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	lower := strings.ToLower(value)
+	if strings.Contains(lower, "://") || strings.Contains(lower, "/") {
+		return true
+	}
+	if parsed, err := url.Parse("https://" + value); err == nil && parsed.Host != "" && strings.Contains(parsed.Host, ".") {
+		return true
+	}
+	return false
 }
 
 func publicModelUpstreamName(item model.ModelCost, fallback string) string {
@@ -483,10 +550,21 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 		setting.Channels = []model.ModelChannel{}
 	}
 	setting.PromptSync = normalizePromptSyncSetting(setting.PromptSync)
+	setting.TaskQueue = normalizeTaskQueueSetting(setting.TaskQueue)
 	setting.Auth.Email = normalizePrivateEmailAuthSetting(setting.Auth.Email)
 	setting.ObjectStorage = normalizeObjectStorageSetting(setting.ObjectStorage)
 	for i := range setting.Channels {
 		setting.Channels[i] = normalizeModelChannel(setting.Channels[i])
+	}
+	return setting
+}
+
+func normalizeTaskQueueSetting(setting model.TaskQueueSetting) model.TaskQueueSetting {
+	if setting.DefaultUserConcurrency <= 0 {
+		setting.DefaultUserConcurrency = 2
+	}
+	if setting.DefaultUserConcurrency > 50 {
+		setting.DefaultUserConcurrency = 50
 	}
 	return setting
 }

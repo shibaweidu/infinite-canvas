@@ -49,6 +49,15 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type SystemTask = {
+    id: string;
+    status: "pending" | "running" | "success" | "failed";
+    result?: string;
+    error?: string;
+};
+type AITaskResult = {
+    body?: string;
+};
 type ToolChatResponse = {
     choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }> } }>;
     error?: { message?: string };
@@ -227,6 +236,34 @@ function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
 }
 
+async function submitAITask<T>(url: string, body: unknown, headers: Record<string, string | undefined>, parse: (payload: ImageApiResponse) => T) {
+    const created = unwrapTask((await axios.post<{ code?: number; data?: SystemTask; msg?: string }>(url, body, { headers })).data);
+    const task = await waitAITask(created.id);
+    if (!task.result) throw new Error("任务没有返回结果");
+    const taskResult = JSON.parse(task.result) as AITaskResult;
+    if (!taskResult.body) throw new Error("任务没有返回内容");
+    return parse(JSON.parse(taskResult.body) as ImageApiResponse);
+}
+
+async function waitAITask(id: string) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+        const task = unwrapTask((await axios.get<{ code?: number; data?: SystemTask; msg?: string }>(`/api/v1/ai-tasks/${encodeURIComponent(id)}`, { headers: aiHeaders({ channelMode: "remote" } as AiConfig) })).data);
+        if (task.status === "success") return task;
+        if (task.status === "failed") throw new Error(task.error || "任务执行失败");
+        await delay(2000);
+    }
+    throw new Error("任务执行超时，请稍后在任务记录中查看");
+}
+
+function unwrapTask(payload: { code?: number; data?: SystemTask; msg?: string }) {
+    if (!payload || payload.code !== 0 || !payload.data) throw new Error(payload?.msg || "任务提交失败");
+    return payload.data;
+}
+
+function delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function withSystemMessage(config: AiConfig, messages: ChatCompletionMessage[]) {
     const systemPrompt = config.systemPrompt.trim();
     return systemPrompt ? [{ role: "system" as const, content: systemPrompt }, ...messages] : messages;
@@ -279,6 +316,23 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     try {
+        if (config.channelMode === "remote") {
+            const images = await submitAITask(
+                "/api/v1/ai-tasks/images/generations",
+                {
+                    model: config.model,
+                    prompt: withSystemPrompt(config, prompt),
+                    n,
+                    ...(requestSize ? { size: requestSize } : {}),
+                    response_format: "b64_json",
+                    output_format: IMAGE_OUTPUT_FORMAT,
+                },
+                aiHeaders(config, "application/json"),
+                parseImagePayload,
+            );
+            refreshRemoteUser(config);
+            return images;
+        }
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
             {
@@ -320,6 +374,11 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
+        if (config.channelMode === "remote") {
+            const images = await submitAITask("/api/v1/ai-tasks/images/edits", formData, aiHeaders(config), parseImagePayload);
+            refreshRemoteUser(config);
+            return images;
+        }
         const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) });
         const images = parseImagePayload(response.data);
         refreshRemoteUser(config);

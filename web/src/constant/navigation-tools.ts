@@ -1,10 +1,10 @@
-import { Bell, FileText, Images, Maximize2, Sparkles } from "lucide-react";
+import { Bell, FileText, Images, Scan, Sparkles } from "lucide-react";
 
 export const navigationTools = [
     {
         slug: "canvas",
         label: "我的画布",
-        icon: Maximize2,
+        icon: Scan,
     },
     {
         slug: "workbench",

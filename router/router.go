@@ -10,6 +10,7 @@ import (
 
 func New() *gin.Engine {
 	router := gin.Default()
+	router.Use(middleware.ErrorRecovery)
 	router.RedirectTrailingSlash = false
 	_ = router.SetTrustedProxies(nil)
 	api := router.Group("/api")
@@ -43,6 +44,12 @@ func New() *gin.Engine {
 	v1 := api.Group("/v1", middleware.UserAuth)
 	v1.POST("/images/generations", gin.WrapF(handler.AIImagesGenerations))
 	v1.POST("/images/edits", gin.WrapF(handler.AIImagesEdits))
+	v1.POST("/ai-tasks/images/generations", gin.WrapF(handler.AIImageGenerationTask))
+	v1.POST("/ai-tasks/images/edits", gin.WrapF(handler.AIImageEditTask))
+	v1.POST("/ai-tasks/videos", gin.WrapF(handler.AIVideoTask))
+	v1.GET("/ai-tasks/:id", func(c *gin.Context) {
+		handler.AISystemTask(c.Writer, c.Request, c.Param("id"))
+	})
 	v1.POST("/chat/completions", gin.WrapF(handler.AIChatCompletions))
 	v1.POST("/responses", func(c *gin.Context) {
 		handler.AIProxyPost(c.Writer, c.Request, "/responses")
@@ -118,7 +125,7 @@ func New() *gin.Engine {
 	api.GET("/credit-packages", gin.WrapF(handler.CreditPackages))
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
-	admin := api.Group("/admin", middleware.AdminAuth)
+	admin := api.Group("/admin", middleware.AdminAuth, middleware.AdminOperationLogger)
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
@@ -145,6 +152,8 @@ func New() *gin.Engine {
 	})
 	admin.GET("/home/works", gin.WrapF(handler.AdminHomeWorks))
 	admin.POST("/home/works", gin.WrapF(handler.AdminSaveHomeWork))
+	admin.POST("/home/works/import-url", gin.WrapF(handler.AdminImportHomeWork))
+	admin.POST("/home/media", gin.WrapF(handler.AdminUploadHomeMedia))
 	admin.DELETE("/home/works/:id", func(c *gin.Context) {
 		handler.AdminDeleteHomeWork(c.Writer, c.Request, c.Param("id"))
 	})
@@ -189,8 +198,20 @@ func New() *gin.Engine {
 	admin.POST("/settings", gin.WrapF(handler.AdminSaveSettings))
 	admin.POST("/settings/channel-models", gin.WrapF(handler.AdminChannelModels))
 	admin.POST("/settings/channel-test", gin.WrapF(handler.AdminTestChannelModel))
+	admin.POST("/settings/object-storage-test", gin.WrapF(handler.AdminTestObjectStorage))
+	admin.GET("/operation-logs", gin.WrapF(handler.AdminOperationLogs))
+	admin.GET("/error-logs", gin.WrapF(handler.AdminErrorLogs))
+	admin.GET("/system-tasks", gin.WrapF(handler.AdminSystemTasks))
+	admin.GET("/server/status", gin.WrapF(handler.AdminServerStatus))
+	admin.GET("/database/status", gin.WrapF(handler.AdminDatabaseStatus))
+	admin.GET("/database/backups", gin.WrapF(handler.AdminDatabaseBackups))
+	admin.POST("/database/backups", gin.WrapF(handler.AdminCreateDatabaseBackup))
 	admin.GET("/prompt-categories", gin.WrapF(handler.AdminPromptCategories))
+	admin.POST("/prompt-categories", gin.WrapF(handler.AdminSavePromptCategory))
 	admin.POST("/prompt-categories/sync", gin.WrapF(handler.AdminSyncPromptCategories))
+	admin.DELETE("/prompt-categories/:category", func(c *gin.Context) {
+		handler.AdminDeletePromptCategory(c.Writer, c.Request, c.Param("category"))
+	})
 	admin.GET("/prompts", gin.WrapF(handler.AdminPrompts))
 	admin.POST("/prompts", gin.WrapF(handler.AdminSavePrompt))
 	admin.POST("/prompts/batch-delete", gin.WrapF(handler.AdminDeletePrompts))

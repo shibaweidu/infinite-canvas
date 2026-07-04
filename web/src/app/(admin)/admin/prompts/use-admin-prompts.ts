@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App } from "antd";
 
-import { deleteAdminPrompt, deleteAdminPrompts, fetchAdminPrompts, fetchAdminPromptCategories, saveAdminPrompt, syncAdminPromptCategory, type AdminPromptCategory } from "@/services/api/admin";
+import { deleteAdminPrompt, deleteAdminPromptCategory, deleteAdminPrompts, fetchAdminPrompts, fetchAdminPromptCategories, saveAdminPrompt, saveAdminPromptCategory, syncAdminPromptCategory, type AdminPromptCategory } from "@/services/api/admin";
 import type { Prompt } from "@/services/api/prompts";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -44,6 +44,28 @@ export function useAdminPrompts() {
         },
         onError: (error) => {
             message.error(error instanceof Error ? error.message : "同步失败");
+        },
+    });
+
+    const saveCategoryMutation = useMutation({
+        mutationFn: (category: Partial<AdminPromptCategory>) => saveAdminPromptCategory(token, category),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["admin", "prompt-categories"] });
+            message.success("提示词分组已保存");
+        },
+        onError: (error) => {
+            message.error(error instanceof Error ? error.message : "分组保存失败");
+        },
+    });
+
+    const deleteCategoryMutation = useMutation({
+        mutationFn: (category: string) => deleteAdminPromptCategory(token, category),
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["admin", "prompt-categories"] });
+            message.success("提示词分组已删除");
+        },
+        onError: (error) => {
+            message.error(error instanceof Error ? error.message : "分组删除失败");
         },
     });
 
@@ -113,9 +135,11 @@ export function useAdminPrompts() {
         page,
         pageSize,
         total: data?.total || 0,
-        isLoading: categoriesQuery.isFetching || promptsQuery.isFetching || saveMutation.isPending || deleteMutation.isPending || batchDeleteMutation.isPending,
+        isLoading: categoriesQuery.isFetching || promptsQuery.isFetching || saveMutation.isPending || deleteMutation.isPending || batchDeleteMutation.isPending || saveCategoryMutation.isPending || deleteCategoryMutation.isPending,
         isSyncing: syncMutation.isPending,
         syncCategory: (category: string) => syncMutation.mutateAsync(category),
+        saveCategory: (category: Partial<AdminPromptCategory>) => saveCategoryMutation.mutateAsync(category),
+        deleteCategory: (category: string) => deleteCategoryMutation.mutateAsync(category),
         searchPrompts: (value = keyword) => updateFilters({ keyword: value }),
         changeCategory: (value: string) => updateFilters({ category: value, tag: [] }),
         changeTag: (value: string[]) => updateFilters({ tag: value }),

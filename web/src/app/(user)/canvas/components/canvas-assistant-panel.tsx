@@ -29,7 +29,7 @@ export const CANVAS_AGENT_PANEL_MOTION_MS = 500;
 const PANEL_MOTION_SECONDS = CANVAS_AGENT_PANEL_MOTION_MS / 1000;
 const ONLINE_AGENT_MAX_STEPS = 4;
 const ONLINE_AGENT_PROMPT =
-    "你是 Infinite Canvas 网页内置在线画布助手。当前画布 JSON 会随用户消息提供。首轮必须调用工具：只读问题调用 canvas_get_state，需要改动画布时调用和本地 Agent 一致的 infinite-canvas 工具。需要生成内容时直接调用 canvas_generate_text、canvas_generate_image、canvas_generate_video、canvas_generate_audio 或 canvas_create_generation_flow；需要精确批量操作时调用 canvas_apply_ops。不要输出 JSON ops，不要编造执行结果。工具参数涉及已有节点时必须使用当前画布 JSON 中真实存在的 id；缺少必要 id 或用户意图不明确时直接说明需要用户明确选择或说明，不要猜测。工具返回结果后，再根据真实结果回答用户。";
+    "你是 kaola Canvas 网页内置在线画布助手。当前画布 JSON 会随用户消息提供。首轮必须调用工具：只读问题调用 canvas_get_state，需要改动画布时调用和本地 Agent 一致的 infinite-canvas 工具。需要生成内容时直接调用 canvas_generate_text、canvas_generate_image、canvas_generate_video、canvas_generate_audio 或 canvas_create_generation_flow；需要精确批量操作时调用 canvas_apply_ops。不要输出 JSON ops，不要编造执行结果。工具参数涉及已有节点时必须使用当前画布 JSON 中真实存在的 id；缺少必要 id 或用户意图不明确时直接说明需要用户明确选择或说明，不要猜测。工具返回结果后，再根据真实结果回答用户。";
 const JSON_RECORD_SCHEMA = { type: "object", additionalProperties: true };
 const POSITION_SCHEMA = { type: "object", properties: { x: { type: "number" }, y: { type: "number" } }, required: ["x", "y"], additionalProperties: false };
 const VIEWPORT_SCHEMA = { type: "object", properties: { x: { type: "number" }, y: { type: "number" }, k: { type: "number" } }, required: ["x", "y", "k"], additionalProperties: false };
@@ -545,10 +545,10 @@ export function CanvasAssistantPanel({ nodes, selectedNodeIds, snapshot, session
                     ) : (
                         <div className="flex h-full flex-col items-center justify-center px-1 text-center">
                             <div className="relative font-serif text-4xl font-bold italic tracking-normal" style={{ color: theme.node.text }}>
-                                <span>Infinite Canvas</span>
-                                <DiaTextReveal className="absolute inset-0" colors={["#A97CF8", "#F38CB8", "#FDCC92"]} textColor="transparent" duration={1.8} startOnView={false} text="Infinite Canvas" />
+                                <span>kaola Canvas</span>
+                                <DiaTextReveal className="absolute inset-0" colors={["#A97CF8", "#F38CB8", "#FDCC92"]} textColor="transparent" duration={1.8} startOnView={false} text="kaola Canvas" />
                             </div>
-                            <div className="mt-3 font-serif text-base italic tracking-wide opacity-60">One canvas, infinite ideas</div>
+                            <div className="mt-3 font-serif text-base italic tracking-wide opacity-60">kaola canvas, infinite ideas</div>
                         </div>
                     )}
                 </div>
@@ -848,12 +848,13 @@ function objectDetail(value: unknown) {
 }
 
 function stringifyLog(value: unknown) {
-    return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    const sanitized = sanitizeOnlineLogValue(value);
+    return typeof sanitized === "string" ? sanitized : JSON.stringify(sanitized, null, 2);
 }
 
 function formatOnlineLogText(logs: OnlineAgentLog[], context: OnlineAgentLogContext) {
     const head = [
-        "Infinite Canvas 网站 Agent 诊断日志",
+        "kaola Canvas 网站 Agent 诊断日志",
         `model: ${context.model || "none"}`,
         `running: ${context.running}`,
         `confirmTools: ${context.confirmTools}`,
@@ -867,7 +868,25 @@ function formatOnlineLogText(logs: OnlineAgentLog[], context: OnlineAgentLogCont
 }
 
 function formatOnlineLogJson(logs: OnlineAgentLog[], context: OnlineAgentLogContext) {
-    return JSON.stringify({ context, logs: logs.map(({ time, title, data }) => ({ time, title, data })) }, null, 2);
+    return JSON.stringify({ context: sanitizeOnlineLogValue(context), logs: logs.map(({ time, title, data }) => ({ time, title, data: sanitizeOnlineLogValue(data) })) }, null, 2);
+}
+
+function sanitizeOnlineLogValue(value: unknown): unknown {
+    if (typeof value === "string") return sanitizeOnlineLogString(value);
+    if (!value || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map(sanitizeOnlineLogValue);
+    return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+            if (/^(apiKey|token|secret|authorization)$/i.test(key)) return [key, "[hidden]"];
+            if (/^(baseUrl|endpoint|providerEndpoint)$/i.test(key)) return [key, "[hidden]"];
+            if (/model/i.test(key) && typeof item === "string") return [key, modelOptionName(item)];
+            return [key, sanitizeOnlineLogValue(item)];
+        }),
+    );
+}
+
+function sanitizeOnlineLogString(value: string) {
+    return value.replace(/https?:\/\/[^\s"'`,，。；;]+?\|\|([^\s"'`,，。；;]+)/gi, "$1");
 }
 
 function describeCanvasSnapshot(snapshot: CanvasAgentSnapshot) {

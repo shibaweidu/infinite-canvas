@@ -33,6 +33,32 @@ func AIVideos(w http.ResponseWriter, r *http.Request) {
 	proxyAIRequest(w, r, "/videos")
 }
 
+func AIImageGenerationTask(w http.ResponseWriter, r *http.Request) {
+	enqueueAIProxyTask(w, r, "/images/generations")
+}
+
+func AIImageEditTask(w http.ResponseWriter, r *http.Request) {
+	enqueueAIProxyTask(w, r, "/images/edits")
+}
+
+func AIVideoTask(w http.ResponseWriter, r *http.Request) {
+	enqueueAIProxyTask(w, r, "/videos")
+}
+
+func AISystemTask(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "请先登录")
+		return
+	}
+	task, err := service.GetUserSystemTask(user, id)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, task)
+}
+
 func AIProxyPost(w http.ResponseWriter, r *http.Request, path string) {
 	proxyAIRequest(w, r, path)
 }
@@ -128,6 +154,26 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 			log.Printf("AI proxy refund credits failed: user=%s model=%s credits=%d err=%v", user.ID, modelName, credits, err)
 		}
 	})
+}
+
+func enqueueAIProxyTask(w http.ResponseWriter, r *http.Request, path string) {
+	body, contentType, modelName, err := readAIRequest(r)
+	if err != nil {
+		log.Printf("AI task request read failed: %v", err)
+		Fail(w, "AI 请求读取失败")
+		return
+	}
+	user, ok := service.UserFromContext(r.Context())
+	if !ok {
+		Fail(w, "请先登录")
+		return
+	}
+	task, err := service.EnqueueAIProxyTask(user, path, body, contentType, modelName)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, task)
 }
 
 func copyAIResponse(w http.ResponseWriter, request *http.Request, onFailure func()) {

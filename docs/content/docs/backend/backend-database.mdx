@@ -23,6 +23,7 @@ description: 当前后端主要数据表与字段说明
 - `credit_logs`
 - `credit_batches`
 - `prompts`
+- `prompt_categories`
 - `assets`
 - `settings`
 - `announcements`
@@ -34,6 +35,17 @@ description: 当前后端主要数据表与字段说明
 - `home_works`
 - `home_categories`
 - `home_tags`
+- `admin_operation_logs`
+- `system_tasks`
+- `error_logs`
+
+生产环境固定推荐 PostgreSQL，并配合数据库自身备份、云快照或主从方案。SQLite 适合本地开发、内测和低并发部署；如果生产继续使用 SQLite，必须确保 `data` 目录持久化，并定期下载后台“运维管理”中生成的备份文件。
+
+数据库连接池可通过环境变量配置：
+
+- `DATABASE_MAX_OPEN_CONNS`：最大打开连接数，生产示例默认 `80`
+- `DATABASE_MAX_IDLE_CONNS`：最大空闲连接数，生产示例默认 `20`
+- `DATABASE_CONN_MAX_LIFETIME_MINUTES`：连接最长复用分钟数，生产示例默认 `30`
 
 后续新增表时再同步补充本文档，未实际使用的规划表不提前写入。
 
@@ -59,6 +71,7 @@ description: 当前后端主要数据表与字段说明
 | `google_id` | string | Google 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
+| `task_concurrency` | number | 用户单独任务并发数，`0` 表示使用系统默认并发 |
 | `last_login_at` | string | 最近登录时间 |
 | `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
 | `created_at` | string | 创建时间 |
@@ -81,6 +94,19 @@ description: 当前后端主要数据表与字段说明
 | `updated_at` | string | 更新时间 |
 
 `github_url` 仅用于接口返回，不写入数据库。
+
+### prompt_categories
+
+提示词分组表。用于保存后台自定义提示词分组；内置远程分组仍由后端代码提供。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `category` | string | 主键，分组编码 |
+| `name` | string | 分组名称 |
+| `description` | string | 分组说明 |
+| `github_url` | string | 远程分组来源地址，自定义分组为空 |
+| `remote` | bool | 是否远程同步分组 |
+| `updated_at` | string | 更新时间 |
 
 ### assets
 
@@ -119,14 +145,15 @@ description: 当前后端主要数据表与字段说明
 
 ### home_slides
 
-首页幻灯片表。用于后台发布首页顶部轮播内容。
+首页顶部展示表。`kind=media` 时作为横向全屏背景视频、动图或图片；`kind=text` 时作为悬浮在背景上的切换文案。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 主键 |
+| `kind` | string | 类型：`media` 背景媒体，`text` 覆盖文案 |
 | `title` | string | 标题 |
 | `subtitle` | text | 副标题 |
-| `cover_url` | string | 幻灯片封面 |
+| `cover_url` | string | 背景视频、动图或图片地址 |
 | `link_url` | string | 自定义跳转链接 |
 | `work_id` | string | 关联作品 ID |
 | `enabled` | bool | 是否前台显示 |
@@ -184,6 +211,64 @@ description: 当前后端主要数据表与字段说明
 | `sort` | number | 排序值 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+### admin_operation_logs
+
+后台操作日志表。用于记录管理员在后台执行的非 GET 请求，便于上线后排查配置、内容和支付相关变更。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 管理员用户 ID |
+| `username` | string | 管理员用户名 |
+| `method` | string | HTTP 方法 |
+| `path` | string | 后台接口路径 |
+| `query` | string | 查询参数 |
+| `ip` | string | 请求 IP |
+| `user_agent` | string | 浏览器标识 |
+| `status` | number | HTTP 状态码 |
+| `duration` | number | 请求耗时，单位毫秒 |
+| `created_at` | string | 创建时间 |
+
+### system_tasks
+
+系统任务表。第一版用于记录数据库备份等后台任务的执行状态；任务创建后先进入 `pending`，后端 worker 会按用户并发上限异步领取并更新为 `running`、`success` 或 `failed`。后续图片、视频生成和采集任务可以逐步接入同一套任务状态。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `type` | string | 任务类型 |
+| `status` | string | 状态：`pending`、`running`、`success`、`failed` |
+| `title` | string | 任务标题 |
+| `payload` | text | 任务输入参数 |
+| `result` | text | 成功结果 |
+| `error` | text | 失败原因 |
+| `created_by` | string | 创建人用户 ID |
+| `started_at` | string | 开始时间 |
+| `finished_at` | string | 结束时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### error_logs
+
+错误日志表。用于记录接口失败和服务端 panic，后台“运维管理”可查看最近错误。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `source` | string | 来源，例如 `handler` 或 `panic` |
+| `message` | text | 错误摘要 |
+| `detail` | text | 错误详情或堆栈 |
+| `method` | string | HTTP 方法 |
+| `path` | string | 接口路径 |
+| `user_id` | string | 用户 ID |
+| `ip` | string | 请求 IP |
+| `user_agent` | string | 浏览器标识 |
+| `created_at` | string | 创建时间 |
+
+## 本次补充
+
+`system_tasks` 已接入图片生成、图片编辑和视频生成任务：任务类型分别为 `ai_image_generation`、`ai_image_edit`、`ai_video_generation`。`payload` 保存模型、接口类型、请求内容和预估积分，worker 执行前扣除积分；上游失败、超时或任务失败时返还积分。图片任务的 `result` 保存上游 JSON 响应，视频任务的 `result` 保存最终视频 URL 或下载后的 base64 视频内容。
 
 ### subscription_plans
 
@@ -310,6 +395,19 @@ description: 当前后端主要数据表与字段说明
 | `modelChannel` | object | 模型渠道公开配置组 |
 | `auth` | object | 公开登录配置 |
 | `objectStorage` | object | 对象存储公开配置 |
+| `site` | object | 前台站点信息、首页作品展示开关和导航配置 |
+
+`site` 当前字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `logoUrl` | string | 前台和后台品牌 LOGO 地址 |
+| `name` | string | 网站显示名称 |
+| `title` | string | 浏览器标题，默认跟随网站名称 |
+| `description` | string | 页面 meta description |
+| `slogan` | string | 顶部品牌区广告语 |
+| `worksEnabled` | bool | 首页作品展示开关 |
+| `navigation` | object[] | 前台顶部导航配置 |
 
 `modelChannel` 当前字段：
 

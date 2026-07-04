@@ -89,6 +89,25 @@ func AdminSaveHomeWork(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+type adminImportHomeWorkRequest struct {
+	URL   string `json:"url"`
+	Model string `json:"model"`
+}
+
+func AdminImportHomeWork(w http.ResponseWriter, r *http.Request) {
+	var request adminImportHomeWorkRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "请求参数错误")
+		return
+	}
+	result, err := service.ImportHomeWorkFromURL(request.URL, request.Model)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func AdminDeleteHomeWork(w http.ResponseWriter, r *http.Request, id string) {
 	if err := service.DeleteHomeWork(id); err != nil {
 		FailError(w, err)
@@ -158,4 +177,3 @@ func AdminDeleteHomeTag(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	OK(w, true)
 }
-

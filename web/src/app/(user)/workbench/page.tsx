@@ -23,7 +23,7 @@ import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/vide
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -223,8 +223,9 @@ export default function WorkbenchPage() {
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
         const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/"));
+        const remainImageSlots = mode === "video" ? Math.max(0, SEEDANCE_REFERENCE_LIMITS.images - references.length) : imageFiles.length;
         const nextImages = await Promise.all(
-            imageFiles.slice(0, mode === "video" ? SEEDANCE_REFERENCE_LIMITS.images : imageFiles.length).map(async (file) => {
+            imageFiles.slice(0, remainImageSlots).map(async (file) => {
                 const image = await uploadImage(file);
                 return { id: nanoid(), name: file.name, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
             }),
@@ -238,6 +239,10 @@ export default function WorkbenchPage() {
         setVideoReferences((value) => [...value, ...nextVideos].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
         setAudioReferences((value) => filterAudioReferencesByDuration(value, nextAudios, message.warning).slice(0, SEEDANCE_REFERENCE_LIMITS.audios));
     };
+
+    const removeImageReference = (id: string) => setReferences((value) => value.filter((item) => item.id !== id));
+    const removeVideoReference = (id: string) => setVideoReferences((value) => value.filter((item) => item.id !== id));
+    const removeAudioReference = (id: string) => setAudioReferences((value) => value.filter((item) => item.id !== id));
 
     const insertPickedAsset = async (payload: InsertAssetPayload) => {
         if (payload.kind === "text") setPrompt(payload.content);
@@ -455,6 +460,12 @@ export default function WorkbenchPage() {
                 setStyleName={setStyleName}
                 onGenerate={() => void generate()}
                 onUpload={() => fileInputRef.current?.click()}
+                references={references}
+                videoReferences={videoReferences}
+                audioReferences={audioReferences}
+                onRemoveImageReference={removeImageReference}
+                onRemoveVideoReference={removeVideoReference}
+                onRemoveAudioReference={removeAudioReference}
                 onPromptDialog={() => setPromptDialogOpen(true)}
                 onAssetPicker={() => setAssetPickerOpen(true)}
             />
@@ -503,10 +514,16 @@ function UnifiedGeneratorDock({
     settingsOpen,
     setSettingsOpen,
     referenceCount,
+    references,
+    videoReferences,
+    audioReferences,
     styleName,
     setStyleName,
     onGenerate,
     onUpload,
+    onRemoveImageReference,
+    onRemoveVideoReference,
+    onRemoveAudioReference,
     onPromptDialog,
     onAssetPicker,
 }: {
@@ -522,10 +539,16 @@ function UnifiedGeneratorDock({
     settingsOpen: boolean;
     setSettingsOpen: (open: boolean) => void;
     referenceCount: number;
+    references: ReferenceImage[];
+    videoReferences: ReferenceVideo[];
+    audioReferences: ReferenceAudio[];
     styleName: string;
     setStyleName: (value: string) => void;
     onGenerate: () => void;
     onUpload: () => void;
+    onRemoveImageReference: (id: string) => void;
+    onRemoveVideoReference: (id: string) => void;
+    onRemoveAudioReference: (id: string) => void;
     onPromptDialog: () => void;
     onAssetPicker: () => void;
 }) {
@@ -549,6 +572,19 @@ function UnifiedGeneratorDock({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4 md:px-10 lg:px-16 xl:px-24">
             <div className="pointer-events-auto mx-auto w-full max-w-[1180px]">
                 <div className="relative mx-auto w-full max-w-[1032px] rounded-[22px] border shadow-[0_30px_80px_rgba(0,0,0,0.28)] md:rounded-[28px]" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}>
+                    {referenceCount ? (
+                        <div className="flex gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] sm:px-5 md:px-4 [&::-webkit-scrollbar]:hidden">
+                            {references.map((item, index) => (
+                                <ReferenceThumb key={item.id} label={`图片${index + 1}`} preview={<img src={item.dataUrl} alt={item.name} className="h-full w-full object-cover" />} onRemove={() => onRemoveImageReference(item.id)} theme={theme} />
+                            ))}
+                            {videoReferences.map((item, index) => (
+                                <ReferenceThumb key={item.id} label={`视频${index + 1}`} preview={<video src={item.url} className="h-full w-full bg-black object-cover" muted />} onRemove={() => onRemoveVideoReference(item.id)} theme={theme} />
+                            ))}
+                            {audioReferences.map((item, index) => (
+                                <ReferenceThumb key={item.id} label={`音频${index + 1}`} preview={<div className="flex h-full w-full items-center justify-center text-xs font-medium">音频</div>} onRemove={() => onRemoveAudioReference(item.id)} theme={theme} />
+                            ))}
+                        </div>
+                    ) : null}
                     <div className="px-3 pb-3 pt-3 sm:px-5 md:px-4 md:pb-4 md:pt-4">
                         <div className="flex items-start gap-2 md:gap-3">
                             <DockSquareButton icon={<Plus className="size-6" />} label={referenceCount ? `参考 ${referenceCount}` : "参考图"} theme={theme} onClick={onUpload} />
@@ -666,6 +702,18 @@ function DockButton({ children, theme, onClick }: { children: ReactNode; theme: 
     );
 }
 
+function ReferenceThumb({ label, preview, onRemove, theme }: { label: string; preview: ReactNode; onRemove: () => void; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    return (
+        <div className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border" style={{ background: theme.node.fill, borderColor: theme.toolbar.border, color: theme.node.text }}>
+            {preview}
+            <div className="absolute inset-x-0 bottom-0 bg-black/55 px-1 py-0.5 text-center text-[10px] text-white">{label}</div>
+            <button type="button" onClick={onRemove} className="absolute right-1 top-1 hidden size-5 cursor-pointer items-center justify-center rounded-full bg-black/65 text-white group-hover:flex">
+                <X className="size-3" />
+            </button>
+        </div>
+    );
+}
+
 function WorkCard({ item, onDownload, onSaveAsset }: { item: WorkItem; onDownload: (item: WorkItem) => void; onSaveAsset: (item: WorkItem) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
@@ -677,7 +725,7 @@ function WorkCard({ item, onDownload, onSaveAsset }: { item: WorkItem; onDownloa
             <div className="space-y-3 p-3">
                 <div className="line-clamp-2 min-h-10 text-sm font-medium leading-5" style={{ color: theme.node.text }}>{item.prompt || "未命名作品"}</div>
                 <div className="flex flex-wrap gap-1.5 text-[11px]" style={{ color: theme.node.muted }}>
-                    <span>{item.model || "未选择模型"}</span>
+                    <span>{item.model ? modelOptionName(item.model) : "未选择模型"}</span>
                     <span>{item.width}x{item.height}</span>
                     {item.bytes ? <span>{formatBytes(item.bytes)}</span> : null}
                     {item.durationMs ? <span>{formatDuration(item.durationMs)}</span> : null}

@@ -119,10 +119,13 @@ type SiteNavigationItem struct {
 }
 
 type SiteSetting struct {
-	LogoURL    string               `json:"logoUrl"`
-	Name       string               `json:"name"`
-	Slogan     string               `json:"slogan"`
-	Navigation []SiteNavigationItem `json:"navigation"`
+	LogoURL      string               `json:"logoUrl"`
+	Name         string               `json:"name"`
+	Title        string               `json:"title"`
+	Description  string               `json:"description"`
+	Slogan       string               `json:"slogan"`
+	WorksEnabled *bool                `json:"worksEnabled"`
+	Navigation   []SiteNavigationItem `json:"navigation"`
 }
 
 // PublicSetting 公开配置。
@@ -180,8 +183,13 @@ type ObjectStorageSetting struct {
 type PrivateSetting struct {
 	Channels      []ModelChannel       `json:"channels"`
 	PromptSync    PromptSyncSetting    `json:"promptSync"`
+	TaskQueue     TaskQueueSetting     `json:"taskQueue"`
 	Auth          PrivateAuthSetting   `json:"auth"`
 	ObjectStorage ObjectStorageSetting `json:"objectStorage"`
+}
+
+type TaskQueueSetting struct {
+	DefaultUserConcurrency int `json:"defaultUserConcurrency"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。

@@ -19,6 +19,17 @@ type SeedanceTask = {
 };
 type ApiEnvelope<T> = T | { code?: number; data?: T | null; msg?: string };
 type ReferenceMediaUploadResponse = { id: string; url: string; mimeType: string; bytes: number };
+type SystemTask = {
+    id: string;
+    status: "pending" | "running" | "success" | "failed";
+    result?: string;
+    error?: string;
+};
+type AITaskResult = {
+    base64?: string;
+    url?: string;
+    mimeType?: string;
+};
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 
@@ -41,6 +52,38 @@ function aiHeaders(config: AiConfig, contentType?: string) {
 
 function refreshRemoteUser(config: AiConfig) {
     if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
+}
+
+async function requestRemoteVideoTask(body: unknown, headers: Record<string, string | undefined>): Promise<VideoGenerationResult> {
+    const created = unwrapTask((await axios.post<{ code?: number; data?: SystemTask; msg?: string }>("/api/v1/ai-tasks/videos", body, { headers })).data);
+    const task = await waitAITask(created.id);
+    if (!task.result) throw new Error("任务没有返回结果");
+    const result = JSON.parse(task.result) as AITaskResult;
+    if (result.base64) return { blob: base64ToBlob(result.base64, result.mimeType || "video/mp4") };
+    if (result.url) return { url: result.url, mimeType: result.mimeType || "video/mp4" };
+    throw new Error("任务没有返回可播放的视频");
+}
+
+async function waitAITask(id: string) {
+    for (let attempt = 0; attempt < 360; attempt += 1) {
+        const task = unwrapTask((await axios.get<{ code?: number; data?: SystemTask; msg?: string }>(`/api/v1/ai-tasks/${encodeURIComponent(id)}`, { headers: aiHeaders({ channelMode: "remote" } as AiConfig) })).data);
+        if (task.status === "success") return task;
+        if (task.status === "failed") throw new Error(task.error || "任务执行失败");
+        await delay(2000);
+    }
+    throw new Error("任务执行超时，请稍后在任务记录中查看");
+}
+
+function unwrapTask(payload: { code?: number; data?: SystemTask; msg?: string }) {
+    if (!payload || payload.code !== 0 || !payload.data) throw new Error(payload?.msg || "任务提交失败");
+    return payload.data;
+}
+
+function base64ToBlob(value: string, mimeType: string) {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return new Blob([bytes], { type: mimeType });
 }
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = []): Promise<VideoGenerationResult> {
@@ -72,6 +115,11 @@ async function requestOpenAIVideoGeneration(config: AiConfig, model: string, pro
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => body.append("input_reference[]", file));
     try {
+        if (config.channelMode === "remote") {
+            const result = await requestRemoteVideoTask(body, aiHeaders(config));
+            refreshRemoteUser(config);
+            return result;
+        }
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config) })).data);
         if (!created.id) throw new Error("视频接口没有返回任务 ID");
         for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -109,6 +157,11 @@ async function requestSeedanceGeneration(config: AiConfig, model: string, prompt
     };
 
     try {
+        if (config.channelMode === "remote") {
+            const result = await requestRemoteVideoTask(payload, aiHeaders(config, "application/json"));
+            refreshRemoteUser(config);
+            return result;
+        }
         const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json") })).data);
         if (!created.id) throw new Error("Seedance 接口没有返回任务 ID");
         for (let attempt = 0; attempt < 120; attempt += 1) {

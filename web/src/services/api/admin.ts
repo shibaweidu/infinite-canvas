@@ -10,6 +10,7 @@ export type AdminPromptCategory = {
     file: string;
     githubUrl: string;
     remote: boolean;
+    updatedAt: string;
 };
 
 export type AdminUser = {
@@ -26,6 +27,7 @@ export type AdminUser = {
     googleId: string;
     linuxDoId: string;
     status: "active" | "ban";
+    taskConcurrency: number;
     lastLoginAt: string;
     createdAt: string;
     updatedAt: string;
@@ -51,6 +53,113 @@ export type AdminCreditLog = {
 export type AdminCreditLogListResponse = {
     items: AdminCreditLog[];
     total: number;
+};
+
+export type AdminOperationLog = {
+    id: string;
+    userId: string;
+    username: string;
+    method: string;
+    path: string;
+    query: string;
+    ip: string;
+    userAgent: string;
+    status: number;
+    duration: number;
+    createdAt: string;
+};
+
+export type AdminOperationLogListResponse = {
+    items: AdminOperationLog[];
+    total: number;
+};
+
+export type AdminSystemTask = {
+    id: string;
+    type: string;
+    status: "pending" | "running" | "success" | "failed";
+    title: string;
+    payload: string;
+    result: string;
+    error: string;
+    createdBy: string;
+    startedAt: string;
+    finishedAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AdminSystemTaskListResponse = {
+    items: AdminSystemTask[];
+    total: number;
+};
+
+export type AdminErrorLog = {
+    id: string;
+    source: string;
+    message: string;
+    detail: string;
+    method: string;
+    path: string;
+    userId: string;
+    ip: string;
+    userAgent: string;
+    createdAt: string;
+};
+
+export type AdminErrorLogListResponse = {
+    items: AdminErrorLog[];
+    total: number;
+};
+
+export type AdminDatabaseStatus = {
+    driver: string;
+    dsn: string;
+    notes: string[];
+};
+
+export type AdminServerStatus = {
+    startedAt: string;
+    serverTime: string;
+    uptimeSeconds: number;
+    os: string;
+    arch: string;
+    cpuCores: number;
+    goVersion: string;
+    goroutines: number;
+    memory: {
+        alloc: number;
+        sys: number;
+        heapAlloc: number;
+        heapInuse: number;
+        numGc: number;
+    };
+    database: {
+        openConnections: number;
+        inUse: number;
+        idle: number;
+        waitCount: number;
+        waitDurationMs: number;
+    };
+    taskQueue: {
+        defaultUserConcurrency: number;
+        pending: number;
+        running: number;
+        success: number;
+        failed: number;
+        byType: Record<string, number>;
+    };
+    dataDir: {
+        path: string;
+        size: number;
+    };
+};
+
+export type AdminBackupFile = {
+    name: string;
+    path: string;
+    size: number;
+    createdAt: string;
 };
 
 export type AdminAnnouncement = {
@@ -162,6 +271,34 @@ export async function fetchAdminCreditLogs(token: string, query: AdminUserQuery 
     return apiGet<AdminCreditLogListResponse>("/api/admin/credit-logs", compactApiParams(query), token);
 }
 
+export async function fetchAdminOperationLogs(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminOperationLogListResponse>("/api/admin/operation-logs", compactApiParams(query), token);
+}
+
+export async function fetchAdminSystemTasks(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminSystemTaskListResponse>("/api/admin/system-tasks", compactApiParams(query), token);
+}
+
+export async function fetchAdminErrorLogs(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminErrorLogListResponse>("/api/admin/error-logs", compactApiParams(query), token);
+}
+
+export async function fetchAdminDatabaseStatus(token: string) {
+    return apiGet<AdminDatabaseStatus>("/api/admin/database/status", undefined, token);
+}
+
+export async function fetchAdminServerStatus(token: string) {
+    return apiGet<AdminServerStatus>("/api/admin/server/status", undefined, token);
+}
+
+export async function fetchAdminDatabaseBackups(token: string) {
+    return apiGet<AdminBackupFile[]>("/api/admin/database/backups", undefined, token);
+}
+
+export async function createAdminDatabaseBackup(token: string) {
+    return apiPost<AdminSystemTask>("/api/admin/database/backups", {}, token);
+}
+
 export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
     return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
 }
@@ -204,6 +341,14 @@ export async function saveAdminHomeWork(token: string, item: Partial<HomeWork>) 
     return apiPost<HomeWork>("/api/admin/home/works", item, token);
 }
 
+export type AdminHomeWorkImportResult = Partial<HomeWork> & {
+    sourceUrl: string;
+};
+
+export async function importAdminHomeWorkFromUrl(token: string, url: string, model?: string) {
+    return apiPost<AdminHomeWorkImportResult>("/api/admin/home/works/import-url", { url, model }, token);
+}
+
 export async function deleteAdminHomeWork(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/home/works/${encodeURIComponent(id)}`, token);
 }
@@ -230,6 +375,16 @@ export async function saveAdminHomeTag(token: string, item: Partial<HomeTag>) {
 
 export async function deleteAdminHomeTag(token: string, id: string) {
     return apiDelete<boolean>(`/api/admin/home/tags/${encodeURIComponent(id)}`, token);
+}
+
+export async function uploadAdminHomeMedia(token: string, file: File) {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    const response = await axios.post<{ code: number; data: AdminUploadedObject; msg: string }>("/api/admin/home/media", body, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.data.code !== 0) throw new Error(response.data.msg || "媒体上传失败");
+    return response.data.data;
 }
 
 export async function uploadAdminAnnouncementImage(token: string, file: File) {
@@ -276,6 +431,14 @@ export async function saveAdminPaymentSettings(token: string, item: Partial<Admi
 
 export async function fetchAdminPromptCategories(token: string) {
     return apiGet<AdminPromptCategory[]>("/api/admin/prompt-categories", undefined, token);
+}
+
+export async function saveAdminPromptCategory(token: string, category: Partial<AdminPromptCategory>) {
+    return apiPost<AdminPromptCategory>("/api/admin/prompt-categories", category, token);
+}
+
+export async function deleteAdminPromptCategory(token: string, category: string) {
+    return apiDelete<boolean>(`/api/admin/prompt-categories/${encodeURIComponent(category)}`, token);
 }
 
 export async function syncAdminPromptCategory(token: string, category: string) {
@@ -430,7 +593,10 @@ export type AdminSiteNavigationItem = {
 export type AdminSiteSettings = {
     logoUrl: string;
     name: string;
+    title: string;
+    description: string;
     slogan: string;
+    worksEnabled: boolean;
     navigation: AdminSiteNavigationItem[];
 };
 
@@ -483,6 +649,9 @@ export type AdminPrivateSettings = {
     promptSync: {
         enabled: boolean;
         cron: string;
+    };
+    taskQueue: {
+        defaultUserConcurrency: number;
     };
     auth: {
         email: {
@@ -542,4 +711,8 @@ export async function fetchChannelModels(token: string, payload: AdminChannelAct
 
 export async function testChannelModel(token: string, payload: AdminChannelActionRequest) {
     return apiPost<string>("/api/admin/settings/channel-test", payload, token);
+}
+
+export async function testAdminObjectStorage(token: string, objectStorage: AdminPrivateSettings["objectStorage"]) {
+    return apiPost<string>("/api/admin/settings/object-storage-test", { objectStorage }, token);
 }
