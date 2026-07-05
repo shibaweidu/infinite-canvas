@@ -50,6 +50,62 @@ func AccountSummary(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func AccountTasks(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	result, err := service.AccountTasks(user, parseTaskLogQuery(r))
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AccountTask(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	result, err := service.AccountTask(user, id)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func RetryAccountTask(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	result, err := service.RetryAccountTask(user, id)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func CancelAccountTask(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	result, err := service.CancelAccountTask(user, id)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
 func SubscriptionPlans(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListSubscriptionPlans(false)
 	if err != nil {

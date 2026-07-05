@@ -63,18 +63,18 @@ const (
 )
 
 type PaymentSettings struct {
-	Enabled      bool            `json:"enabled"`
-	Provider     PaymentProvider `json:"provider" gorm:"primaryKey"`
-	GatewayURL   string          `json:"gatewayUrl"`
-	PID          string          `json:"pid"`
-	Key          string          `json:"key,omitempty"`
-	HasKey       bool            `json:"hasKey,omitempty" gorm:"-"`
-	SiteName     string          `json:"siteName"`
-	PayType      string          `json:"payType"`
-	NotifyURL    string          `json:"notifyUrl"`
-	ReturnURL    string          `json:"returnUrl"`
-	CreatedAt    string          `json:"createdAt"`
-	UpdatedAt    string          `json:"updatedAt"`
+	Enabled    bool            `json:"enabled"`
+	Provider   PaymentProvider `json:"provider" gorm:"primaryKey"`
+	GatewayURL string          `json:"gatewayUrl"`
+	PID        string          `json:"pid"`
+	Key        string          `json:"key,omitempty"`
+	HasKey     bool            `json:"hasKey,omitempty" gorm:"-"`
+	SiteName   string          `json:"siteName"`
+	PayType    string          `json:"payType"`
+	NotifyURL  string          `json:"notifyUrl"`
+	ReturnURL  string          `json:"returnUrl"`
+	CreatedAt  string          `json:"createdAt"`
+	UpdatedAt  string          `json:"updatedAt"`
 }
 
 type PaymentOrderStatus string
@@ -126,4 +126,31 @@ type AccountSummary struct {
 	CreditPackages  []CreditPackage    `json:"creditPackages"`
 	RechargeRecords []CreditLog        `json:"rechargeRecords"`
 	ConsumeRecords  []CreditLog        `json:"consumeRecords"`
+}
+
+type AccountTaskItem struct {
+	ID              string           `json:"id"`
+	Type            string           `json:"type"`
+	TypeLabel       string           `json:"typeLabel"`
+	Status          SystemTaskStatus `json:"status"`
+	StatusLabel     string           `json:"statusLabel"`
+	Title           string           `json:"title"`
+	Model           string           `json:"model"`
+	Credits         int              `json:"credits"`
+	Progress        int              `json:"progress"`
+	CreatedAt       string           `json:"createdAt"`
+	StartedAt       string           `json:"startedAt"`
+	FinishedAt      string           `json:"finishedAt"`
+	DurationMs      int64            `json:"durationMs"`
+	QueueDurationMs int64            `json:"queueDurationMs"`
+	RunDurationMs   int64            `json:"runDurationMs"`
+	Summary         string           `json:"summary"`
+	Error           string           `json:"error"`
+	Timeline        []TaskLogEvent   `json:"timeline,omitempty"`
+	ResultLinks     []TaskLogLink    `json:"resultLinks,omitempty"`
+}
+
+type AccountTaskList struct {
+	Items []AccountTaskItem `json:"items"`
+	Total int               `json:"total"`
 }

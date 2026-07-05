@@ -83,6 +83,56 @@ export type AccountSummary = {
     consumeRecords: AccountCreditLog[];
 };
 
+export type AccountTaskStatus = "pending" | "running" | "success" | "failed" | "canceled";
+
+export type AccountTaskLink = {
+    label: string;
+    url: string;
+    type: string;
+};
+
+export type AccountTaskEvent = {
+    time: string;
+    title: string;
+    description: string;
+    status: "wait" | "process" | "finish" | "error" | string;
+};
+
+export type AccountTask = {
+    id: string;
+    type: string;
+    typeLabel: string;
+    status: AccountTaskStatus;
+    statusLabel: string;
+    title: string;
+    model: string;
+    credits: number;
+    progress: number;
+    createdAt: string;
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+    queueDurationMs: number;
+    runDurationMs: number;
+    summary: string;
+    error: string;
+    timeline?: AccountTaskEvent[];
+    resultLinks?: AccountTaskLink[];
+};
+
+export type AccountTaskList = {
+    items: AccountTask[];
+    total: number;
+};
+
+export type AccountTaskQuery = {
+    keyword?: string;
+    status?: string;
+    type?: string;
+    page?: number;
+    pageSize?: number;
+};
+
 export type PaymentOrderType = "subscription" | "credit";
 
 export type PaymentOrder = {
@@ -133,6 +183,22 @@ export async function fetchCurrentUser(token?: string) {
 
 export async function fetchAccountSummary(token: string) {
     return apiGet<AccountSummary>("/api/account/summary", undefined, token);
+}
+
+export async function fetchAccountTasks(token: string, query: AccountTaskQuery = {}) {
+    return apiGet<AccountTaskList>("/api/account/tasks", query, token);
+}
+
+export async function fetchAccountTask(token: string, id: string) {
+    return apiGet<AccountTask>(`/api/account/tasks/${encodeURIComponent(id)}`, undefined, token);
+}
+
+export async function retryAccountTask(token: string, id: string) {
+    return apiPost<AccountTask>(`/api/account/tasks/${encodeURIComponent(id)}/retry`, {}, token);
+}
+
+export async function cancelAccountTask(token: string, id: string) {
+    return apiPost<AccountTask>(`/api/account/tasks/${encodeURIComponent(id)}/cancel`, {}, token);
 }
 
 export async function createPaymentOrder(token: string, type: PaymentOrderType, itemId: string) {

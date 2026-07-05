@@ -94,6 +94,85 @@ export type AdminSystemTaskListResponse = {
     total: number;
 };
 
+export type AdminTaskLogStatus = "pending" | "running" | "success" | "failed" | "canceled";
+
+export type AdminTaskLog = {
+    id: string;
+    sourceTaskId: string;
+    type: string;
+    typeLabel: string;
+    status: AdminTaskLogStatus;
+    statusLabel: string;
+    title: string;
+    createdBy: string;
+    platform: string;
+    model: string;
+    credits: number;
+    progress: number;
+    createdAt: string;
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+    queueDurationMs: number;
+    runDurationMs: number;
+    summary: string;
+    error: string;
+    upstreamTaskId: string;
+    timeline?: AdminTaskLogEvent[];
+    creditLogs?: AdminCreditLog[];
+    relatedTasks?: AdminTaskLogRelated[];
+    resultLinks?: AdminTaskLogLink[];
+    payload?: string;
+    result?: string;
+};
+
+export type AdminTaskLogEvent = {
+    time: string;
+    title: string;
+    description: string;
+    status: "wait" | "process" | "finish" | "error" | string;
+};
+
+export type AdminTaskLogRelated = {
+    id: string;
+    relation: string;
+    status: AdminTaskLogStatus;
+    statusLabel: string;
+    createdAt: string;
+};
+
+export type AdminTaskLogLink = {
+    label: string;
+    url: string;
+    type: string;
+};
+
+export type AdminTaskLogListResponse = {
+    items: AdminTaskLog[];
+    total: number;
+};
+
+export type AdminTaskLogStats = {
+    total: number;
+    today: number;
+    pending: number;
+    running: number;
+    success: number;
+    failed: number;
+    canceled: number;
+    averageDurationMs: number;
+};
+
+export type AdminTaskLogQuery = {
+    keyword?: string;
+    status?: string;
+    type?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    page?: number;
+    pageSize?: number;
+};
+
 export type AdminErrorLog = {
     id: string;
     source: string;
@@ -277,6 +356,26 @@ export async function fetchAdminOperationLogs(token: string, query: AdminUserQue
 
 export async function fetchAdminSystemTasks(token: string, query: AdminUserQuery = {}) {
     return apiGet<AdminSystemTaskListResponse>("/api/admin/system-tasks", compactApiParams(query), token);
+}
+
+export async function fetchAdminTaskLogs(token: string, query: AdminTaskLogQuery = {}) {
+    return apiGet<AdminTaskLogListResponse>("/api/admin/task-logs", compactApiParams(query), token);
+}
+
+export async function fetchAdminTaskLogStats(token: string, query: AdminTaskLogQuery = {}) {
+    return apiGet<AdminTaskLogStats>("/api/admin/task-logs/stats", compactApiParams(query), token);
+}
+
+export async function fetchAdminTaskLogDetail(token: string, id: string) {
+    return apiGet<AdminTaskLog>(`/api/admin/task-logs/${encodeURIComponent(id)}`, undefined, token);
+}
+
+export async function retryAdminTaskLog(token: string, id: string) {
+    return apiPost<AdminTaskLog>(`/api/admin/task-logs/${encodeURIComponent(id)}/retry`, {}, token);
+}
+
+export async function cancelAdminTaskLog(token: string, id: string) {
+    return apiPost<AdminTaskLog>(`/api/admin/task-logs/${encodeURIComponent(id)}/cancel`, {}, token);
 }
 
 export async function fetchAdminErrorLogs(token: string, query: AdminUserQuery = {}) {

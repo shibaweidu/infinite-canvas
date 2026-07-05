@@ -475,3 +475,149 @@ func AccountSummary(user model.AuthUser) (model.AccountSummary, error) {
 	sanitizeCreditLogs(consume)
 	return model.AccountSummary{User: user, Plans: plans, CreditPackages: packages, RechargeRecords: recharge, ConsumeRecords: consume}, nil
 }
+
+func AccountTasks(user model.AuthUser, q model.TaskLogQuery) (model.AccountTaskList, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return model.AccountTaskList{}, safeMessageError{message: "请先登录"}
+	}
+	items, total, err := repository.ListUserTaskLogs(user.ID, q)
+	if err != nil {
+		return model.AccountTaskList{}, err
+	}
+	result := make([]model.AccountTaskItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, accountTaskItem(item, false))
+	}
+	return model.AccountTaskList{Items: result, Total: int(total)}, nil
+}
+
+func AccountTask(user model.AuthUser, id string) (model.AccountTaskItem, error) {
+	task, err := accountTaskByID(user, id)
+	if err != nil {
+		return model.AccountTaskItem{}, err
+	}
+	return accountTaskItem(task, true), nil
+}
+
+func RetryAccountTask(user model.AuthUser, id string) (model.AccountTaskItem, error) {
+	task, err := accountTaskByID(user, id)
+	if err != nil {
+		return model.AccountTaskItem{}, err
+	}
+	if task.Status != model.SystemTaskStatusFailed && task.Status != model.SystemTaskStatusCanceled {
+		return model.AccountTaskItem{}, safeMessageError{message: "只有失败或已取消的任务可以重试"}
+	}
+	now := time.Now().Format(time.RFC3339)
+	next := model.SystemTask{
+		ID:        newID("task"),
+		Type:      task.Type,
+		Status:    model.SystemTaskStatusPending,
+		Title:     task.Title,
+		Payload:   resetTaskPayloadForRetry(task.Payload, task.ID),
+		CreatedBy: user.ID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := repository.SaveSystemTask(next); err != nil {
+		return model.AccountTaskItem{}, err
+	}
+	return accountTaskItem(next, true), nil
+}
+
+func CancelAccountTask(user model.AuthUser, id string) (model.AccountTaskItem, error) {
+	task, err := accountTaskByID(user, id)
+	if err != nil {
+		return model.AccountTaskItem{}, err
+	}
+	if task.Status != model.SystemTaskStatusPending {
+		return model.AccountTaskItem{}, safeMessageError{message: "只有排队中的任务可以取消"}
+	}
+	now := time.Now().Format(time.RFC3339)
+	task.Status = model.SystemTaskStatusCanceled
+	task.FinishedAt = now
+	task.UpdatedAt = now
+	task.Error = "用户取消任务"
+	if err := repository.SaveSystemTask(task); err != nil {
+		return model.AccountTaskItem{}, err
+	}
+	return accountTaskItem(task, true), nil
+}
+
+func accountTaskByID(user model.AuthUser, id string) (model.SystemTask, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return model.SystemTask{}, safeMessageError{message: "请先登录"}
+	}
+	task, ok, err := repository.GetSystemTaskByID(strings.TrimSpace(id))
+	if err != nil {
+		return model.SystemTask{}, err
+	}
+	if !ok || task.CreatedBy != user.ID {
+		return model.SystemTask{}, safeMessageError{message: "任务不存在"}
+	}
+	return task, nil
+}
+
+func accountTaskItem(task model.SystemTask, includeDetail bool) model.AccountTaskItem {
+	item := buildTaskLogItem(task, false)
+	result := parseTaskResult(task.Result)
+	next := model.AccountTaskItem{
+		ID:              item.ID,
+		Type:            item.Type,
+		TypeLabel:       item.TypeLabel,
+		Status:          item.Status,
+		StatusLabel:     item.StatusLabel,
+		Title:           item.Title,
+		Model:           sanitizeModelName(item.Model),
+		Credits:         item.Credits,
+		Progress:        item.Progress,
+		CreatedAt:       item.CreatedAt,
+		StartedAt:       item.StartedAt,
+		FinishedAt:      item.FinishedAt,
+		DurationMs:      item.DurationMs,
+		QueueDurationMs: item.QueueDurationMs,
+		RunDurationMs:   item.RunDurationMs,
+		Summary:         sanitizeModelEndpointText(item.Summary),
+		Error:           sanitizeModelEndpointText(item.Error),
+		ResultLinks:     accountTaskResultLinks(result),
+	}
+	if includeDetail {
+		payload := parseTaskPayload(task.Payload)
+		next.Timeline = taskTimeline(task, payload, result)
+		for i := range next.Timeline {
+			next.Timeline[i].Description = sanitizeModelEndpointText(next.Timeline[i].Description)
+		}
+	}
+	return next
+}
+
+func accountTaskResultLinks(result AITaskResult) []model.TaskLogLink {
+	links := taskResultLinks(result)
+	if len(links) == 0 {
+		return links
+	}
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return links
+	}
+	blocked := []string{}
+	for _, channel := range normalizePrivateSetting(settings.Private).Channels {
+		if baseURL := normalizeModelChannelBaseURL(channel.BaseURL); baseURL != "" {
+			blocked = append(blocked, strings.ToLower(strings.TrimRight(baseURL, "/")))
+		}
+	}
+	resultLinks := make([]model.TaskLogLink, 0, len(links))
+	for _, link := range links {
+		lowerURL := strings.ToLower(strings.TrimSpace(link.URL))
+		hidden := false
+		for _, baseURL := range blocked {
+			if baseURL != "" && strings.HasPrefix(lowerURL, baseURL) {
+				hidden = true
+				break
+			}
+		}
+		if !hidden {
+			resultLinks = append(resultLinks, link)
+		}
+	}
+	return resultLinks
+}

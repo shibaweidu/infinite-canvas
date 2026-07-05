@@ -3,7 +3,7 @@
 import type { CSSProperties, RefObject } from "react";
 import { useEffect, useState } from "react";
 import { Avatar, Dropdown, Tooltip } from "antd";
-import { Bell, Keyboard, LogOut, Settings2, Shield, UserRound, WalletCards } from "lucide-react";
+import { Bell, Keyboard, ListChecks, LogOut, Settings2, Shield, UserRound, WalletCards } from "lucide-react";
 import type { ItemType } from "antd/es/menu/interface";
 import Link from "next/link";
 
@@ -36,7 +36,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const [accountDialogOpen, setAccountDialogOpen] = useState(false);
     const [announcementsOpen, setAnnouncementsOpen] = useState(false);
-    const [initialTab, setInitialTab] = useState<"profile" | "plans" | "packages" | "recharge" | "consume">("profile");
+    const [initialTab, setInitialTab] = useState<"profile" | "plans" | "packages" | "tasks" | "recharge" | "consume">("profile");
     const [billingVisible, setBillingVisible] = useState({ plans: false, packages: false });
     const canvasTheme = canvasThemes[theme];
     const userName = user?.displayName || user?.username || "";
@@ -49,6 +49,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const menuItems: ItemType[] = [
         { key: "user", disabled: true, label: <span className="font-medium text-current">{userName}</span> },
         { key: "account", icon: <UserRound className="size-4" />, label: "个人中心", onClick: () => { setInitialTab("profile"); setAccountDialogOpen(true); } },
+        { key: "tasks", icon: <ListChecks className="size-4" />, label: "我的任务", onClick: () => { setInitialTab("tasks"); setAccountDialogOpen(true); } },
         { key: "announcements", icon: <Bell className="size-4" />, label: "公告中心", onClick: () => setAnnouncementsOpen(true) },
         ...(user?.role === "admin" ? [{ key: "admin", icon: <Shield className="size-4" />, label: <Link href="/admin">管理后台</Link> }] : []),
         ...(onOpenShortcuts ? [{ key: "shortcuts", icon: <Keyboard className="size-4" />, label: "快捷键", onClick: onOpenShortcuts }] : []),

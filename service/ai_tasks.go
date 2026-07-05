@@ -30,14 +30,16 @@ type AITaskPayload struct {
 	Model       string `json:"model"`
 	Credits     int    `json:"credits"`
 	Charged     bool   `json:"charged"`
+	RetryOf     string `json:"retryOf,omitempty"`
 }
 
 type AITaskResult struct {
-	ContentType string `json:"contentType,omitempty"`
-	Body        string `json:"body,omitempty"`
-	Base64      string `json:"base64,omitempty"`
-	URL         string `json:"url,omitempty"`
-	MimeType    string `json:"mimeType,omitempty"`
+	ContentType    string `json:"contentType,omitempty"`
+	Body           string `json:"body,omitempty"`
+	Base64         string `json:"base64,omitempty"`
+	URL            string `json:"url,omitempty"`
+	MimeType       string `json:"mimeType,omitempty"`
+	UpstreamTaskID string `json:"upstreamTaskId,omitempty"`
 }
 
 func EnqueueAIProxyTask(user model.AuthUser, path string, body []byte, contentType string, modelName string) (model.SystemTask, error) {
@@ -120,7 +122,7 @@ func runAIProxyTask(task model.SystemTask) (string, error) {
 		return "", err
 	}
 	if payload.Credits > 0 && !payload.Charged {
-		if err := ConsumeUserCredits(task.CreatedBy, payload.Model, payload.Credits, payload.Path); err != nil {
+		if err := ConsumeUserCredits(task.CreatedBy, payload.Model, payload.Credits, payload.Path, task.ID); err != nil {
 			return "", err
 		}
 		payload.Charged = true
@@ -132,7 +134,7 @@ func runAIProxyTask(task model.SystemTask) (string, error) {
 	}
 	result, err := executeAIProxyPayload(payload, body)
 	if err != nil && payload.Credits > 0 && payload.Charged {
-		if refundErr := RefundUserCredits(task.CreatedBy, payload.Model, payload.Credits, payload.Path); refundErr != nil {
+		if refundErr := RefundUserCredits(task.CreatedBy, payload.Model, payload.Credits, payload.Path, task.ID); refundErr != nil {
 			log.Printf("AI task refund credits failed: task=%s user=%s model=%s credits=%d err=%v", task.ID, task.CreatedBy, payload.Model, payload.Credits, refundErr)
 		}
 	}
@@ -178,7 +180,7 @@ func executeVideoAITask(channel model.ModelChannel, upstreamModel string, path s
 		status := strings.ToLower(extractJSONText(statusBody, "status"))
 		if status == "completed" || status == "succeeded" || status == "success" {
 			if url := extractJSONText(statusBody, "video_url"); url != "" {
-				result, _ := json.Marshal(AITaskResult{URL: url, MimeType: "video/mp4"})
+				result, _ := json.Marshal(AITaskResult{URL: url, MimeType: "video/mp4", UpstreamTaskID: taskID})
 				return string(result), nil
 			}
 			contentPath := resolveAITaskProxyPath(channel.BaseURL, upstreamModel, "/videos/"+taskID+"/content")
@@ -186,7 +188,7 @@ func executeVideoAITask(channel model.ModelChannel, upstreamModel string, path s
 			if err != nil {
 				return "", err
 			}
-			result, _ := json.Marshal(AITaskResult{Base64: base64.StdEncoding.EncodeToString(contentBody), MimeType: normalizeAIVideoMimeType(contentType)})
+			result, _ := json.Marshal(AITaskResult{Base64: base64.StdEncoding.EncodeToString(contentBody), MimeType: normalizeAIVideoMimeType(contentType), UpstreamTaskID: taskID})
 			return string(result), nil
 		}
 		if status == "failed" || status == "cancelled" || status == "canceled" || status == "expired" {

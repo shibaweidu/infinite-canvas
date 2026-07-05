@@ -238,7 +238,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `id` | string | 主键 |
 | `type` | string | 任务类型 |
-| `status` | string | 状态：`pending`、`running`、`success`、`failed` |
+| `status` | string | 状态：`pending`、`running`、`success`、`failed`、`canceled` |
 | `title` | string | 任务标题 |
 | `payload` | text | 任务输入参数 |
 | `result` | text | 成功结果 |
@@ -269,6 +269,8 @@ description: 当前后端主要数据表与字段说明
 ## 本次补充
 
 `system_tasks` 已接入图片生成、图片编辑和视频生成任务：任务类型分别为 `ai_image_generation`、`ai_image_edit`、`ai_video_generation`。`payload` 保存模型、接口类型、请求内容和预估积分，worker 执行前扣除积分；上游失败、超时或任务失败时返还积分。图片任务的 `result` 保存上游 JSON 响应，视频任务的 `result` 保存最终视频 URL 或下载后的 base64 视频内容。
+
+任务日志重试会新建一条新的 `pending` 任务，并在新任务 `payload.retryOf` 中记录原任务 ID；AI 任务的积分消费和失败返还流水会把任务 ID 写入 `credit_logs.related_id`，便于后台任务日志详情串联任务、积分流水和结果。
 
 ### subscription_plans
 

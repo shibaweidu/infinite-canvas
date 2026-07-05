@@ -22,10 +22,11 @@ type AdminOperationLogList struct {
 type SystemTaskStatus string
 
 const (
-	SystemTaskStatusPending SystemTaskStatus = "pending"
-	SystemTaskStatusRunning SystemTaskStatus = "running"
-	SystemTaskStatusSuccess SystemTaskStatus = "success"
-	SystemTaskStatusFailed  SystemTaskStatus = "failed"
+	SystemTaskStatusPending  SystemTaskStatus = "pending"
+	SystemTaskStatusRunning  SystemTaskStatus = "running"
+	SystemTaskStatusSuccess  SystemTaskStatus = "success"
+	SystemTaskStatusFailed   SystemTaskStatus = "failed"
+	SystemTaskStatusCanceled SystemTaskStatus = "canceled"
 )
 
 type SystemTask struct {
@@ -46,6 +47,99 @@ type SystemTask struct {
 type SystemTaskList struct {
 	Items []SystemTask `json:"items"`
 	Total int          `json:"total"`
+}
+
+type TaskLogQuery struct {
+	Keyword     string
+	Status      string
+	Type        string
+	CreatedFrom string
+	CreatedTo   string
+	Page        int
+	PageSize    int
+}
+
+func (q *TaskLogQuery) Normalize() {
+	if q.Page < 1 {
+		q.Page = 1
+	}
+	if q.PageSize < 1 {
+		q.PageSize = 20
+	}
+	if q.PageSize > MaxPageSize {
+		q.PageSize = MaxPageSize
+	}
+}
+
+func (q TaskLogQuery) Offset() int {
+	return (q.Page - 1) * q.PageSize
+}
+
+type TaskLogItem struct {
+	ID              string           `json:"id"`
+	SourceTaskID    string           `json:"sourceTaskId"`
+	Type            string           `json:"type"`
+	TypeLabel       string           `json:"typeLabel"`
+	Status          SystemTaskStatus `json:"status"`
+	StatusLabel     string           `json:"statusLabel"`
+	Title           string           `json:"title"`
+	CreatedBy       string           `json:"createdBy"`
+	Platform        string           `json:"platform"`
+	Model           string           `json:"model"`
+	Credits         int              `json:"credits"`
+	Progress        int              `json:"progress"`
+	CreatedAt       string           `json:"createdAt"`
+	StartedAt       string           `json:"startedAt"`
+	FinishedAt      string           `json:"finishedAt"`
+	DurationMs      int64            `json:"durationMs"`
+	QueueDurationMs int64            `json:"queueDurationMs"`
+	RunDurationMs   int64            `json:"runDurationMs"`
+	Summary         string           `json:"summary"`
+	Error           string           `json:"error"`
+	UpstreamTaskID  string           `json:"upstreamTaskId"`
+	Timeline        []TaskLogEvent   `json:"timeline,omitempty"`
+	CreditLogs      []CreditLog      `json:"creditLogs,omitempty"`
+	RelatedTasks    []TaskLogRelated `json:"relatedTasks,omitempty"`
+	ResultLinks     []TaskLogLink    `json:"resultLinks,omitempty"`
+	Payload         string           `json:"payload,omitempty"`
+	Result          string           `json:"result,omitempty"`
+}
+
+type TaskLogEvent struct {
+	Time        string `json:"time"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+}
+
+type TaskLogRelated struct {
+	ID          string           `json:"id"`
+	Relation    string           `json:"relation"`
+	Status      SystemTaskStatus `json:"status"`
+	StatusLabel string           `json:"statusLabel"`
+	CreatedAt   string           `json:"createdAt"`
+}
+
+type TaskLogLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+	Type  string `json:"type"`
+}
+
+type TaskLogList struct {
+	Items []TaskLogItem `json:"items"`
+	Total int           `json:"total"`
+}
+
+type TaskLogStats struct {
+	Total             int64 `json:"total"`
+	Today             int64 `json:"today"`
+	Pending           int64 `json:"pending"`
+	Running           int64 `json:"running"`
+	Success           int64 `json:"success"`
+	Failed            int64 `json:"failed"`
+	Canceled          int64 `json:"canceled"`
+	AverageDurationMs int64 `json:"averageDurationMs"`
 }
 
 type ErrorLog struct {

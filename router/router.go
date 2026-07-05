@@ -117,6 +117,16 @@ func New() *gin.Engine {
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.GET("/account/summary", middleware.UserAuth, gin.WrapF(handler.AccountSummary))
+	api.GET("/account/tasks", middleware.UserAuth, gin.WrapF(handler.AccountTasks))
+	api.GET("/account/tasks/:id", middleware.UserAuth, func(c *gin.Context) {
+		handler.AccountTask(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/account/tasks/:id/retry", middleware.UserAuth, func(c *gin.Context) {
+		handler.RetryAccountTask(c.Writer, c.Request, c.Param("id"))
+	})
+	api.POST("/account/tasks/:id/cancel", middleware.UserAuth, func(c *gin.Context) {
+		handler.CancelAccountTask(c.Writer, c.Request, c.Param("id"))
+	})
 	api.POST("/payment/orders", middleware.UserAuth, gin.WrapF(handler.CreatePaymentOrder))
 	api.GET("/payment/epay/notify", gin.WrapF(handler.EPayNotify))
 	api.POST("/payment/epay/notify", gin.WrapF(handler.EPayNotify))
@@ -202,6 +212,17 @@ func New() *gin.Engine {
 	admin.GET("/operation-logs", gin.WrapF(handler.AdminOperationLogs))
 	admin.GET("/error-logs", gin.WrapF(handler.AdminErrorLogs))
 	admin.GET("/system-tasks", gin.WrapF(handler.AdminSystemTasks))
+	admin.GET("/task-logs", gin.WrapF(handler.AdminTaskLogs))
+	admin.GET("/task-logs/stats", gin.WrapF(handler.AdminTaskLogStats))
+	admin.GET("/task-logs/:id", func(c *gin.Context) {
+		handler.AdminTaskLogDetail(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.POST("/task-logs/:id/retry", func(c *gin.Context) {
+		handler.AdminRetryTaskLog(c.Writer, c.Request, c.Param("id"))
+	})
+	admin.POST("/task-logs/:id/cancel", func(c *gin.Context) {
+		handler.AdminCancelTaskLog(c.Writer, c.Request, c.Param("id"))
+	})
 	admin.GET("/server/status", gin.WrapF(handler.AdminServerStatus))
 	admin.GET("/database/status", gin.WrapF(handler.AdminDatabaseStatus))
 	admin.GET("/database/backups", gin.WrapF(handler.AdminDatabaseBackups))
