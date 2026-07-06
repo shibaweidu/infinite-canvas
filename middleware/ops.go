@@ -31,6 +31,19 @@ func AdminOperationLogger(c *gin.Context) {
 	})
 }
 
+func RequestMonitor(c *gin.Context) {
+	start := time.Now()
+	c.Next()
+	path := c.FullPath()
+	if path == "" {
+		path = c.Request.URL.Path
+	}
+	if path == "/api/admin/ops/dashboard" {
+		return
+	}
+	service.RecordHTTPRequest(c.Request.Method, path, c.Writer.Status(), time.Since(start).Milliseconds())
+}
+
 func ErrorRecovery(c *gin.Context) {
 	defer func() {
 		if recovered := recover(); recovered != nil {

@@ -234,6 +234,83 @@ export type AdminServerStatus = {
     };
 };
 
+export type AdminOpsHealthItem = {
+    key: string;
+    label: string;
+    status: "ok" | "warn" | "error" | "off" | string;
+    message: string;
+};
+
+export type AdminOpsMetricPoint = {
+    time: string;
+    value: number;
+};
+
+export type AdminOpsStatusSlice = {
+    label: string;
+    value: number;
+};
+
+export type AdminOpsRecentRequest = {
+    method: string;
+    path: string;
+    status: number;
+    durationMs: number;
+    createdAt: string;
+};
+
+export type AdminOpsSlowEndpoint = {
+    method: string;
+    path: string;
+    count: number;
+    averageDurationMs: number;
+    maxDurationMs: number;
+};
+
+export type AdminOpsDashboard = {
+    health: AdminOpsHealthItem[];
+    server: AdminServerStatus;
+    requests: {
+        total: number;
+        today: number;
+        failed: number;
+        averageDurationMs: number;
+        maxDurationMs: number;
+        recent: AdminOpsRecentRequest[];
+        slowEndpoints: AdminOpsSlowEndpoint[];
+        status: AdminOpsStatusSlice[];
+        timeline: AdminOpsMetricPoint[];
+    };
+    business: {
+        users: number;
+        newUsersToday: number;
+        activeUsersToday: number;
+        works: number;
+        publishedWorks: number;
+        creditsConsumedToday: number;
+        operationsToday: number;
+        errorsToday: number;
+    };
+    payments: {
+        todayOrders: number;
+        paidOrders: number;
+        pendingOrders: number;
+        closedOrders: number;
+        paidAmount: number;
+        successRate: number;
+    };
+    modelChannels: Array<{
+        name: string;
+        enabled: boolean;
+        configured: boolean;
+        modelCount: number;
+        status: "ok" | "warn" | "off" | string;
+        message: string;
+    }>;
+    errors: AdminErrorLogListResponse;
+    operations: AdminOperationLogListResponse;
+};
+
 export type AdminBackupFile = {
     name: string;
     path: string;
@@ -388,6 +465,10 @@ export async function fetchAdminDatabaseStatus(token: string) {
 
 export async function fetchAdminServerStatus(token: string) {
     return apiGet<AdminServerStatus>("/api/admin/server/status", undefined, token);
+}
+
+export async function fetchAdminOpsDashboard(token: string) {
+    return apiGet<AdminOpsDashboard>("/api/admin/ops/dashboard", undefined, token);
 }
 
 export async function fetchAdminDatabaseBackups(token: string) {

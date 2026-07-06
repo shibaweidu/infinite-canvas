@@ -329,3 +329,121 @@ func ListErrorLogs(q model.Query) ([]model.ErrorLog, int64, error) {
 	err = tx.Order("created_at desc").Offset(q.Offset()).Limit(q.PageSize).Find(&items).Error
 	return items, total, err
 }
+
+func CountAdminOperationsSince(since string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.AdminOperationLog{})
+	if since != "" {
+		tx = tx.Where("created_at >= ?", since)
+	}
+	var total int64
+	return total, tx.Count(&total).Error
+}
+
+func CountErrorLogsSince(since string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.ErrorLog{})
+	if since != "" {
+		tx = tx.Where("created_at >= ?", since)
+	}
+	var total int64
+	return total, tx.Count(&total).Error
+}
+
+func CountUsersSince(since string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.User{})
+	if since != "" {
+		tx = tx.Where("created_at >= ?", since)
+	}
+	var total int64
+	return total, tx.Count(&total).Error
+}
+
+func CountActiveUsersSince(since string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.User{})
+	if since != "" {
+		tx = tx.Where("last_login_at >= ?", since)
+	}
+	var total int64
+	return total, tx.Count(&total).Error
+}
+
+func CountHomeWorks(status model.HomeWorkStatus) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.HomeWork{})
+	if status != "" {
+		tx = tx.Where("status = ?", status)
+	}
+	var total int64
+	return total, tx.Count(&total).Error
+}
+
+func CreditAmountSince(types []model.CreditLogType, since string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.CreditLog{})
+	if len(types) > 0 {
+		tx = tx.Where("type IN ?", types)
+	}
+	if since != "" {
+		tx = tx.Where("created_at >= ?", since)
+	}
+	type row struct {
+		Total int64
+	}
+	var result row
+	err = tx.Select("COALESCE(SUM(amount), 0) as total").Scan(&result).Error
+	return result.Total, err
+}
+
+func PaymentStatsSince(since string) (map[model.PaymentOrderStatus]int64, int64, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, 0, err
+	}
+	tx := db.Model(&model.PaymentOrder{})
+	if since != "" {
+		tx = tx.Where("created_at >= ?", since)
+	}
+	type countRow struct {
+		Status model.PaymentOrderStatus
+		Total  int64
+	}
+	var rows []countRow
+	if err := tx.Select("status, COUNT(*) as total").Group("status").Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	result := map[model.PaymentOrderStatus]int64{}
+	for _, item := range rows {
+		result[item.Status] = item.Total
+	}
+	amountTx := db.Model(&model.PaymentOrder{}).Where("status = ?", model.PaymentOrderStatusPaid)
+	if since != "" {
+		amountTx = amountTx.Where("created_at >= ?", since)
+	}
+	type amountRow struct {
+		Total int64
+	}
+	var amount amountRow
+	err = amountTx.Select("COALESCE(SUM(amount), 0) as total").Scan(&amount).Error
+	return result, amount.Total, err
+}

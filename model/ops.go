@@ -211,6 +211,91 @@ type ServerDataDirStatus struct {
 	Size int64  `json:"size"`
 }
 
+type OpsDashboard struct {
+	Health        []OpsHealthItem       `json:"health"`
+	Server        ServerStatus          `json:"server"`
+	Requests      OpsRequestStats       `json:"requests"`
+	Business      OpsBusinessStats      `json:"business"`
+	Payments      OpsPaymentStats       `json:"payments"`
+	ModelChannels []OpsModelChannelStat `json:"modelChannels"`
+	Errors        ErrorLogList          `json:"errors"`
+	Operations    AdminOperationLogList `json:"operations"`
+}
+
+type OpsHealthItem struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type OpsMetricPoint struct {
+	Time  string `json:"time"`
+	Value int64  `json:"value"`
+}
+
+type OpsStatusSlice struct {
+	Label string `json:"label"`
+	Value int64  `json:"value"`
+}
+
+type OpsRequestStats struct {
+	Total             int64              `json:"total"`
+	Today             int64              `json:"today"`
+	Failed            int64              `json:"failed"`
+	AverageDurationMs int64              `json:"averageDurationMs"`
+	MaxDurationMs     int64              `json:"maxDurationMs"`
+	Recent            []OpsRecentRequest `json:"recent"`
+	SlowEndpoints     []OpsSlowEndpoint  `json:"slowEndpoints"`
+	Status            []OpsStatusSlice   `json:"status"`
+	Timeline          []OpsMetricPoint   `json:"timeline"`
+}
+
+type OpsRecentRequest struct {
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	Status     int    `json:"status"`
+	DurationMs int64  `json:"durationMs"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+type OpsSlowEndpoint struct {
+	Method            string `json:"method"`
+	Path              string `json:"path"`
+	Count             int64  `json:"count"`
+	AverageDurationMs int64  `json:"averageDurationMs"`
+	MaxDurationMs     int64  `json:"maxDurationMs"`
+}
+
+type OpsBusinessStats struct {
+	Users                int64 `json:"users"`
+	NewUsersToday        int64 `json:"newUsersToday"`
+	ActiveUsersToday     int64 `json:"activeUsersToday"`
+	Works                int64 `json:"works"`
+	PublishedWorks       int64 `json:"publishedWorks"`
+	CreditsConsumedToday int64 `json:"creditsConsumedToday"`
+	OperationsToday      int64 `json:"operationsToday"`
+	ErrorsToday          int64 `json:"errorsToday"`
+}
+
+type OpsPaymentStats struct {
+	TodayOrders   int64 `json:"todayOrders"`
+	PaidOrders    int64 `json:"paidOrders"`
+	PendingOrders int64 `json:"pendingOrders"`
+	ClosedOrders  int64 `json:"closedOrders"`
+	PaidAmount    int64 `json:"paidAmount"`
+	SuccessRate   int   `json:"successRate"`
+}
+
+type OpsModelChannelStat struct {
+	Name       string `json:"name"`
+	Enabled    bool   `json:"enabled"`
+	Configured bool   `json:"configured"`
+	ModelCount int    `json:"modelCount"`
+	Status     string `json:"status"`
+	Message    string `json:"message"`
+}
+
 type BackupFile struct {
 	Name      string `json:"name"`
 	Path      string `json:"path"`

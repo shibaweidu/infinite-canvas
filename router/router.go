@@ -11,6 +11,7 @@ import (
 func New() *gin.Engine {
 	router := gin.Default()
 	router.Use(middleware.ErrorRecovery)
+	router.Use(middleware.RequestMonitor)
 	router.RedirectTrailingSlash = false
 	_ = router.SetTrustedProxies(nil)
 	api := router.Group("/api")
@@ -224,6 +225,7 @@ func New() *gin.Engine {
 		handler.AdminCancelTaskLog(c.Writer, c.Request, c.Param("id"))
 	})
 	admin.GET("/server/status", gin.WrapF(handler.AdminServerStatus))
+	admin.GET("/ops/dashboard", gin.WrapF(handler.AdminOpsDashboard))
 	admin.GET("/database/status", gin.WrapF(handler.AdminDatabaseStatus))
 	admin.GET("/database/backups", gin.WrapF(handler.AdminDatabaseBackups))
 	admin.POST("/database/backups", gin.WrapF(handler.AdminCreateDatabaseBackup))

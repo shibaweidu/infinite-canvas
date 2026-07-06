@@ -88,6 +88,10 @@ func AdminServerStatus(w http.ResponseWriter, r *http.Request) {
 	OK(w, service.ServerStatus())
 }
 
+func AdminOpsDashboard(w http.ResponseWriter, r *http.Request) {
+	OK(w, service.OpsDashboard())
+}
+
 func AdminDatabaseBackups(w http.ResponseWriter, r *http.Request) {
 	result, err := service.ListDatabaseBackups()
 	if err != nil {

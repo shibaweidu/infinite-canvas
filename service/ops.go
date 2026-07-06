@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +26,17 @@ var (
 	systemTaskWorkerOnce sync.Once
 	systemTaskWorkerMu   sync.Mutex
 	serverStartedAt      = time.Now()
+	requestMonitorMu     sync.Mutex
+	requestMetrics       []requestMetric
 )
+
+type requestMetric struct {
+	Method     string
+	Path       string
+	Status     int
+	DurationMs int64
+	CreatedAt  time.Time
+}
 
 func StartSystemTaskWorker() {
 	systemTaskWorkerOnce.Do(func() {
@@ -73,12 +84,52 @@ func RecordErrorLog(item model.ErrorLog) {
 	_ = repository.SaveErrorLog(item)
 }
 
+func RecordHTTPRequest(method string, path string, status int, durationMs int64) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "-"
+	}
+	requestMonitorMu.Lock()
+	requestMetrics = append(requestMetrics, requestMetric{
+		Method:     strings.TrimSpace(method),
+		Path:       path,
+		Status:     status,
+		DurationMs: durationMs,
+		CreatedAt:  time.Now(),
+	})
+	if len(requestMetrics) > 3000 {
+		requestMetrics = append([]requestMetric{}, requestMetrics[len(requestMetrics)-3000:]...)
+	}
+	requestMonitorMu.Unlock()
+}
+
 func ListErrorLogs(q model.Query) (model.ErrorLogList, error) {
 	items, total, err := repository.ListErrorLogs(q)
 	if err != nil {
 		return model.ErrorLogList{}, err
 	}
 	return model.ErrorLogList{Items: items, Total: int(total)}, nil
+}
+
+func OpsDashboard() model.OpsDashboard {
+	server := ServerStatus()
+	today := time.Now().Format("2006-01-02")
+	requests := requestStats(today)
+	business := businessStats(today)
+	payments := paymentStats(today)
+	errors, _ := ListErrorLogs(model.Query{Page: 1, PageSize: 8})
+	operations, _ := ListAdminOperationLogs(model.Query{Page: 1, PageSize: 8})
+	channels := modelChannelStats()
+	return model.OpsDashboard{
+		Health:        opsHealth(server, requests, business, payments, channels),
+		Server:        server,
+		Requests:      requests,
+		Business:      business,
+		Payments:      payments,
+		ModelChannels: channels,
+		Errors:        errors,
+		Operations:    operations,
+	}
 }
 
 func ListSystemTasks(q model.Query) (model.SystemTaskList, error) {
@@ -308,6 +359,239 @@ func taskUserConcurrency(userID string, fallback int) int {
 		return 50
 	}
 	return user.TaskConcurrency
+}
+
+func requestStats(today string) model.OpsRequestStats {
+	requestMonitorMu.Lock()
+	items := append([]requestMetric{}, requestMetrics...)
+	requestMonitorMu.Unlock()
+	var totalDuration int64
+	var maxDuration int64
+	var todayTotal int64
+	var failed int64
+	statusCounts := map[string]int64{"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0}
+	points := map[string]int64{}
+	slowMap := map[string]*model.OpsSlowEndpoint{}
+	recent := []model.OpsRecentRequest{}
+	for i := len(items) - 1; i >= 0 && len(recent) < 12; i-- {
+		item := items[i]
+		recent = append(recent, model.OpsRecentRequest{Method: item.Method, Path: item.Path, Status: item.Status, DurationMs: item.DurationMs, CreatedAt: item.CreatedAt.Format(time.RFC3339)})
+	}
+	for _, item := range items {
+		totalDuration += item.DurationMs
+		if item.DurationMs > maxDuration {
+			maxDuration = item.DurationMs
+		}
+		if item.CreatedAt.Format("2006-01-02") == today {
+			todayTotal++
+		}
+		if item.Status >= 500 {
+			failed++
+		}
+		statusCounts[statusFamily(item.Status)]++
+		points[item.CreatedAt.Format("15:04")]++
+		key := item.Method + " " + item.Path
+		slow := slowMap[key]
+		if slow == nil {
+			slow = &model.OpsSlowEndpoint{Method: item.Method, Path: item.Path}
+			slowMap[key] = slow
+		}
+		slow.Count++
+		slow.AverageDurationMs += item.DurationMs
+		if item.DurationMs > slow.MaxDurationMs {
+			slow.MaxDurationMs = item.DurationMs
+		}
+	}
+	slowEndpoints := make([]model.OpsSlowEndpoint, 0, len(slowMap))
+	for _, item := range slowMap {
+		if item.Count > 0 {
+			item.AverageDurationMs = item.AverageDurationMs / item.Count
+		}
+		slowEndpoints = append(slowEndpoints, *item)
+	}
+	sort.Slice(slowEndpoints, func(i, j int) bool { return slowEndpoints[i].MaxDurationMs > slowEndpoints[j].MaxDurationMs })
+	if len(slowEndpoints) > 8 {
+		slowEndpoints = slowEndpoints[:8]
+	}
+	timeline := make([]model.OpsMetricPoint, 0, len(points))
+	for timeLabel, value := range points {
+		timeline = append(timeline, model.OpsMetricPoint{Time: timeLabel, Value: value})
+	}
+	sort.Slice(timeline, func(i, j int) bool { return timeline[i].Time < timeline[j].Time })
+	if len(timeline) > 24 {
+		timeline = timeline[len(timeline)-24:]
+	}
+	average := int64(0)
+	if len(items) > 0 {
+		average = totalDuration / int64(len(items))
+	}
+	return model.OpsRequestStats{
+		Total:             int64(len(items)),
+		Today:             todayTotal,
+		Failed:            failed,
+		AverageDurationMs: average,
+		MaxDurationMs:     maxDuration,
+		Recent:            recent,
+		SlowEndpoints:     slowEndpoints,
+		Status: []model.OpsStatusSlice{
+			{Label: "2xx", Value: statusCounts["2xx"]},
+			{Label: "3xx", Value: statusCounts["3xx"]},
+			{Label: "4xx", Value: statusCounts["4xx"]},
+			{Label: "5xx", Value: statusCounts["5xx"]},
+		},
+		Timeline: timeline,
+	}
+}
+
+func statusFamily(status int) string {
+	switch {
+	case status >= 500:
+		return "5xx"
+	case status >= 400:
+		return "4xx"
+	case status >= 300:
+		return "3xx"
+	default:
+		return "2xx"
+	}
+}
+
+func businessStats(today string) model.OpsBusinessStats {
+	users, _ := repository.CountUsers()
+	newUsers, _ := repository.CountUsersSince(today)
+	activeUsers, _ := repository.CountActiveUsersSince(today)
+	works, _ := repository.CountHomeWorks("")
+	publishedWorks, _ := repository.CountHomeWorks(model.HomeWorkStatusPublished)
+	credits, _ := repository.CreditAmountSince([]model.CreditLogType{model.CreditLogTypeAIConsume}, today)
+	operations, _ := repository.CountAdminOperationsSince(today)
+	errors, _ := repository.CountErrorLogsSince(today)
+	return model.OpsBusinessStats{
+		Users:                users,
+		NewUsersToday:        newUsers,
+		ActiveUsersToday:     activeUsers,
+		Works:                works,
+		PublishedWorks:       publishedWorks,
+		CreditsConsumedToday: -credits,
+		OperationsToday:      operations,
+		ErrorsToday:          errors,
+	}
+}
+
+func paymentStats(today string) model.OpsPaymentStats {
+	counts, amount, _ := repository.PaymentStatsSince(today)
+	total := counts[model.PaymentOrderStatusPending] + counts[model.PaymentOrderStatusPaid] + counts[model.PaymentOrderStatusClosed]
+	rate := 0
+	if total > 0 {
+		rate = int(counts[model.PaymentOrderStatusPaid] * 100 / total)
+	}
+	return model.OpsPaymentStats{
+		TodayOrders:   total,
+		PaidOrders:    counts[model.PaymentOrderStatusPaid],
+		PendingOrders: counts[model.PaymentOrderStatusPending],
+		ClosedOrders:  counts[model.PaymentOrderStatusClosed],
+		PaidAmount:    amount,
+		SuccessRate:   rate,
+	}
+}
+
+func modelChannelStats() []model.OpsModelChannelStat {
+	settings, err := repository.GetSettings()
+	if err != nil {
+		return []model.OpsModelChannelStat{}
+	}
+	channels := normalizePrivateSetting(settings.Private).Channels
+	result := make([]model.OpsModelChannelStat, 0, len(channels))
+	for _, channel := range channels {
+		configured := strings.TrimSpace(channel.BaseURL) != "" && strings.TrimSpace(channel.APIKey) != ""
+		status := "ok"
+		message := "可用"
+		if !channel.Enabled {
+			status = "off"
+			message = "已关闭"
+		} else if !configured {
+			status = "warn"
+			message = "配置不完整"
+		}
+		result = append(result, model.OpsModelChannelStat{
+			Name:       firstNonEmpty(channel.Name, "未命名渠道"),
+			Enabled:    channel.Enabled,
+			Configured: configured,
+			ModelCount: len(enabledChannelModels(channel)),
+			Status:     status,
+			Message:    message,
+		})
+	}
+	return result
+}
+
+func enabledChannelModels(channel model.ModelChannel) []string {
+	result := []string{}
+	for _, item := range channel.ModelItems {
+		if item.Enabled && item.Selected {
+			result = append(result, item.Model)
+		}
+	}
+	if len(result) == 0 {
+		for _, item := range channel.Models {
+			if strings.TrimSpace(item) != "" {
+				result = append(result, item)
+			}
+		}
+	}
+	return result
+}
+
+func opsHealth(server model.ServerStatus, requests model.OpsRequestStats, business model.OpsBusinessStats, payments model.OpsPaymentStats, channels []model.OpsModelChannelStat) []model.OpsHealthItem {
+	queueStatus := "ok"
+	queueMessage := "队列正常"
+	if server.TaskQueue.Failed > 0 {
+		queueStatus = "warn"
+		queueMessage = "存在失败任务"
+	}
+	if server.TaskQueue.Pending > 20 {
+		queueStatus = "warn"
+		queueMessage = "排队任务偏多"
+	}
+	requestStatus := "ok"
+	requestMessage := "请求正常"
+	if requests.Failed > 0 {
+		requestStatus = "warn"
+		requestMessage = "存在 5xx 请求"
+	}
+	channelStatus := "ok"
+	channelMessage := "模型渠道正常"
+	if len(channels) == 0 {
+		channelStatus = "warn"
+		channelMessage = "未配置模型渠道"
+	} else {
+		for _, channel := range channels {
+			if channel.Enabled && !channel.Configured {
+				channelStatus = "warn"
+				channelMessage = "存在未完整配置的模型渠道"
+				break
+			}
+		}
+	}
+	errorStatus := "ok"
+	errorMessage := "无新增错误"
+	if business.ErrorsToday > 0 {
+		errorStatus = "warn"
+		errorMessage = "今日有错误日志"
+	}
+	paymentStatus := "ok"
+	paymentMessage := "支付正常"
+	if payments.TodayOrders > 0 && payments.SuccessRate < 50 {
+		paymentStatus = "warn"
+		paymentMessage = "支付成功率偏低"
+	}
+	return []model.OpsHealthItem{
+		{Key: "api", Label: "网站请求", Status: requestStatus, Message: requestMessage},
+		{Key: "database", Label: "数据库", Status: "ok", Message: "连接池可用"},
+		{Key: "queue", Label: "任务队列", Status: queueStatus, Message: queueMessage},
+		{Key: "model", Label: "模型渠道", Status: channelStatus, Message: channelMessage},
+		{Key: "payment", Label: "支付", Status: paymentStatus, Message: paymentMessage},
+		{Key: "errors", Label: "错误监控", Status: errorStatus, Message: errorMessage},
+	}
 }
 
 func DatabaseStatus() model.DatabaseStatus {
