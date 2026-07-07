@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiOutlined, CloudServerOutlined, DatabaseOutlined, FileDoneOutlined, HddOutlined, ReloadOutlined, SafetyCertificateOutlined, SettingOutlined, ThunderboltOutlined, WarningOutlined } from "@ant-design/icons";
+import { ApiOutlined, CloudServerOutlined, DatabaseOutlined, DownloadOutlined, FileDoneOutlined, HddOutlined, ReloadOutlined, SafetyCertificateOutlined, SettingOutlined, ThunderboltOutlined, WarningOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Card, Descriptions, Flex, Progress, Space, Tabs, Tag, Typography } from "antd";
@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 
 import {
     createAdminDatabaseBackup,
+    downloadAdminDatabaseBackup,
     fetchAdminDatabaseBackups,
     fetchAdminDatabaseStatus,
     fetchAdminOpsDashboard,
@@ -80,6 +81,23 @@ export default function AdminOpsPage() {
         onError: (error) => message.error(error instanceof Error ? error.message : "数据库备份失败"),
     });
 
+    const downloadBackup = async (item: AdminBackupFile) => {
+        if (!token) return;
+        try {
+            const blob = await downloadAdminDatabaseBackup(token, item.name);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = item.name;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "备份下载失败");
+        }
+    };
+
     const refreshAll = async () => {
         await Promise.all([dashboardQuery.refetch(), serverQuery.refetch(), databaseQuery.refetch(), backupsQuery.refetch(), taskQuery.refetch()]);
     };
@@ -115,6 +133,16 @@ export default function AdminOpsPage() {
         { title: "大小", dataIndex: "size", width: 120, render: (_, item) => sizeText(item.size) },
         { title: "路径", dataIndex: "path", ellipsis: true },
         { title: "创建时间", dataIndex: "createdAt", width: 180, render: (_, item) => timeText(item.createdAt) },
+        {
+            title: "操作",
+            width: 96,
+            align: "right",
+            render: (_, item) => (
+                <Button size="small" icon={<DownloadOutlined />} className="cursor-pointer" onClick={() => void downloadBackup(item)}>
+                    下载
+                </Button>
+            ),
+        },
     ];
 
     return (

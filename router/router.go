@@ -235,6 +235,9 @@ func New() *gin.Engine {
 	admin.GET("/database/status", gin.WrapF(handler.AdminDatabaseStatus))
 	admin.GET("/database/backups", gin.WrapF(handler.AdminDatabaseBackups))
 	admin.POST("/database/backups", gin.WrapF(handler.AdminCreateDatabaseBackup))
+	admin.GET("/database/backups/:name/download", func(c *gin.Context) {
+		handler.AdminDownloadDatabaseBackup(c.Writer, c.Request, c.Param("name"))
+	})
 	admin.GET("/prompt-categories", gin.WrapF(handler.AdminPromptCategories))
 	admin.POST("/prompt-categories", gin.WrapF(handler.AdminSavePromptCategory))
 	admin.POST("/prompt-categories/sync", gin.WrapF(handler.AdminSyncPromptCategories))

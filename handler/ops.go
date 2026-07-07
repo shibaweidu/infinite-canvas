@@ -111,6 +111,17 @@ func AdminCreateDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func AdminDownloadDatabaseBackup(w http.ResponseWriter, r *http.Request, name string) {
+	path, fileName, err := service.DatabaseBackupDownloadPath(name)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fileName+`"`)
+	w.Header().Set("Content-Type", "application/octet-stream")
+	http.ServeFile(w, r, path)
+}
+
 func parseTaskLogQuery(r *http.Request) model.TaskLogQuery {
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))

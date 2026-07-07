@@ -1090,6 +1090,30 @@ func ListDatabaseBackups() ([]model.BackupFile, error) {
 	return items, nil
 }
 
+func DatabaseBackupDownloadPath(name string) (string, string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || filepath.Base(name) != name {
+		return "", "", safeMessageError{message: "备份文件不存在"}
+	}
+	dir, err := filepath.Abs(backupDir())
+	if err != nil {
+		return "", "", err
+	}
+	path, err := filepath.Abs(filepath.Join(dir, name))
+	if err != nil {
+		return "", "", err
+	}
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", "", safeMessageError{message: "备份文件不存在"}
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "", "", safeMessageError{message: "备份文件不存在"}
+	}
+	return path, name, nil
+}
+
 func EnqueueDatabaseBackup(user model.AuthUser) (model.SystemTask, error) {
 	now := time.Now().Format(time.RFC3339)
 	task := model.SystemTask{ID: newID("task"), Type: databaseBackupTaskType, Status: model.SystemTaskStatusPending, Title: "数据库备份", CreatedBy: user.ID, CreatedAt: now, UpdatedAt: now}

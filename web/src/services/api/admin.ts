@@ -486,6 +486,28 @@ export async function createAdminDatabaseBackup(token: string) {
     return apiPost<AdminSystemTask>("/api/admin/database/backups", {}, token);
 }
 
+export async function downloadAdminDatabaseBackup(token: string, name: string) {
+    const response = await axios.get<Blob>(`/api/admin/database/backups/${encodeURIComponent(name)}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: "blob",
+        validateStatus: () => true,
+    });
+    const contentType = response.headers["content-type"] || "";
+    if (contentType.includes("application/json")) {
+        const text = await response.data.text();
+        let message = "备份下载失败";
+        try {
+            const payload = JSON.parse(text) as { code?: number; msg?: string };
+            message = payload.msg || message;
+        } catch {
+            // keep the generic download error
+        }
+        throw new Error(message);
+    }
+    if (response.status < 200 || response.status >= 300) throw new Error("备份下载失败");
+    return response.data;
+}
+
 export async function saveAdminCreditLog(token: string, log: Partial<AdminCreditLog>) {
     return apiPost<AdminCreditLog>("/api/admin/credit-logs", log, token);
 }
