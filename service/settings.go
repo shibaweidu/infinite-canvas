@@ -560,13 +560,28 @@ func normalizePrivateSetting(setting model.PrivateSetting) model.PrivateSetting 
 }
 
 func normalizeTaskQueueSetting(setting model.TaskQueueSetting) model.TaskQueueSetting {
-	if setting.DefaultUserConcurrency <= 0 {
-		setting.DefaultUserConcurrency = 2
-	}
-	if setting.DefaultUserConcurrency > 50 {
-		setting.DefaultUserConcurrency = 50
-	}
+	setting.DefaultUserConcurrency = clampInt(setting.DefaultUserConcurrency, 2, 1, 50)
+	setting.ImageUserConcurrency = clampInt(setting.ImageUserConcurrency, setting.DefaultUserConcurrency, 1, 50)
+	setting.VideoUserConcurrency = clampInt(setting.VideoUserConcurrency, 1, 1, 50)
+	setting.GlobalDefaultConcurrency = clampInt(setting.GlobalDefaultConcurrency, 20, 1, 1000)
+	setting.GlobalImageConcurrency = clampInt(setting.GlobalImageConcurrency, 30, 1, 1000)
+	setting.GlobalVideoConcurrency = clampInt(setting.GlobalVideoConcurrency, 5, 1, 1000)
+	setting.VideoPollIntervalSeconds = clampInt(setting.VideoPollIntervalSeconds, 5, 1, 60)
+	setting.ImagePollIntervalSeconds = clampInt(setting.ImagePollIntervalSeconds, 3, 1, 60)
 	return setting
+}
+
+func clampInt(value int, fallback int, min int, max int) int {
+	if value <= 0 {
+		value = fallback
+	}
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
 
 func normalizePrivateEmailAuthSetting(setting model.PrivateEmailAuthSetting) model.PrivateEmailAuthSetting {

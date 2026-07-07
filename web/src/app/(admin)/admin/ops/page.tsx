@@ -3,7 +3,7 @@
 import { ApiOutlined, CloudServerOutlined, DatabaseOutlined, FileDoneOutlined, HddOutlined, ReloadOutlined, SafetyCertificateOutlined, SettingOutlined, ThunderboltOutlined, WarningOutlined } from "@ant-design/icons";
 import { ProTable, type ProColumns } from "@ant-design/pro-components";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Descriptions, Flex, Progress, Space, Statistic, Tabs, Tag, Typography } from "antd";
+import { App, Button, Card, Descriptions, Flex, Progress, Space, Tabs, Tag, Typography } from "antd";
 import dayjs from "dayjs";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -28,12 +28,14 @@ import {
 import { useUserStore } from "@/stores/use-user-store";
 
 const neutral = {
-    ink: "#111827",
-    text: "#1f2937",
-    sub: "#6b7280",
-    border: "#e5e7eb",
-    soft: "#f5f5f5",
-    track: "#e5e7eb",
+    ink: "#f5f5f5",
+    text: "#e5e7eb",
+    sub: "#d4d4d8",
+    muted: "#b8c0cc",
+    border: "rgba(255,255,255,0.18)",
+    soft: "rgba(255,255,255,0.10)",
+    track: "rgba(255,255,255,0.12)",
+    panel: "rgba(255,255,255,0.06)",
 };
 
 const timeText = (value?: string) => (value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "-");
@@ -186,8 +188,10 @@ export default function AdminOpsPage() {
                                     <Card variant="borderless">
                                         <Flex align="center" justify="space-between" gap={12} wrap>
                                             <Space direction="vertical" size={4}>
-                                                <Typography.Text strong>默认用户并发数：{settingsQuery.data?.private.taskQueue.defaultUserConcurrency || server?.taskQueue.defaultUserConcurrency || 2}</Typography.Text>
-                                                <Typography.Text type="secondary">用户未单独设置时生效；单个用户可在“用户管理”覆盖，填 0 表示使用系统默认值。</Typography.Text>
+                                                <Typography.Text strong>默认并发：{settingsQuery.data?.private.taskQueue.defaultUserConcurrency || server?.taskQueue.defaultUserConcurrency || 2}/用户</Typography.Text>
+                                                <Typography.Text type="secondary">
+                                                    图片：{settingsQuery.data?.private.taskQueue.imageUserConcurrency || server?.taskQueue.imageUserConcurrency || 2}/用户，视频：{settingsQuery.data?.private.taskQueue.videoUserConcurrency || server?.taskQueue.videoUserConcurrency || 1}/用户；全站默认：{settingsQuery.data?.private.taskQueue.globalDefaultConcurrency || server?.taskQueue.globalDefaultConcurrency || 20}，全站图片：{settingsQuery.data?.private.taskQueue.globalImageConcurrency || server?.taskQueue.globalImageConcurrency || 30}，全站视频：{settingsQuery.data?.private.taskQueue.globalVideoConcurrency || server?.taskQueue.globalVideoConcurrency || 5}。
+                                                </Typography.Text>
                                             </Space>
                                             <Link href="/admin/settings?tab=private&section=taskQueue">
                                                 <Button size="small" icon={<SettingOutlined />} className="cursor-pointer">去设置</Button>
@@ -248,9 +252,9 @@ function DashboardOverview({ dashboard, loading }: { dashboard?: AdminOpsDashboa
                 <Card title="网站请求趋势" variant="borderless">
                     <Sparkline points={dashboard?.requests.timeline || []} height={170} />
                     <Space style={{ marginTop: 12 }} wrap>
-                        <Statistic title="平均耗时" value={msText(dashboard?.requests.averageDurationMs || 0)} />
-                        <Statistic title="最慢请求" value={msText(dashboard?.requests.maxDurationMs || 0)} />
-                        <Statistic title="5xx" value={dashboard?.requests.failed || 0} />
+                        <DashboardStat title="平均耗时" value={msText(dashboard?.requests.averageDurationMs || 0)} />
+                        <DashboardStat title="最慢请求" value={msText(dashboard?.requests.maxDurationMs || 0)} />
+                        <DashboardStat title="5xx" value={dashboard?.requests.failed || 0} />
                     </Space>
                 </Card>
                 <Card title="业务健康" variant="borderless">
@@ -266,9 +270,9 @@ function DashboardOverview({ dashboard, loading }: { dashboard?: AdminOpsDashboa
                 <QueueVisual server={server} />
                 <Card title="支付状态" variant="borderless">
                     <Space size={18} wrap>
-                        <Statistic title="今日订单" value={dashboard?.payments.todayOrders || 0} />
-                        <Statistic title="已支付" value={dashboard?.payments.paidOrders || 0} />
-                        <Statistic title="支付金额" value={moneyText(dashboard?.payments.paidAmount || 0)} />
+                        <DashboardStat title="今日订单" value={dashboard?.payments.todayOrders || 0} />
+                        <DashboardStat title="已支付" value={dashboard?.payments.paidOrders || 0} />
+                        <DashboardStat title="支付金额" value={moneyText(dashboard?.payments.paidAmount || 0)} />
                     </Space>
                 </Card>
                 <Card title="模型渠道健康" variant="borderless">
@@ -330,17 +334,18 @@ function RequestPanel({ dashboard, loading }: { dashboard?: AdminOpsDashboard; l
 function QueueVisual({ server }: { server?: AdminOpsDashboard["server"] }) {
     const queue = server?.taskQueue;
     const total = Math.max((queue?.pending || 0) + (queue?.running || 0) + (queue?.success || 0) + (queue?.failed || 0), 1);
+    const segments = [
+        { label: "排队", value: queue?.pending || 0, color: "#d4d4d4" },
+        { label: "运行", value: queue?.running || 0, color: "#a3a3a3" },
+        { label: "成功", value: queue?.success || 0, color: "#737373" },
+        { label: "失败", value: queue?.failed || 0, color: "#525252" },
+    ];
     return (
-        <Card title="任务队列状态" variant="borderless">
+        <Card title="任务队列状态" variant="borderless" styles={{ header: { color: neutral.ink }, body: { color: neutral.text } }}>
             <Space direction="vertical" size={14} style={{ width: "100%" }}>
-                <Flex gap={8}>
-                    {[
-                        ["排队", queue?.pending || 0],
-                        ["运行", queue?.running || 0],
-                        ["成功", queue?.success || 0],
-                        ["失败", queue?.failed || 0],
-                    ].map(([label, value]) => (
-                        <div key={label} style={{ flex: Number(value) || 0.2, minWidth: 42, height: 34, borderRadius: 8, background: label === "失败" ? "#525252" : neutral.ink, opacity: label === "成功" ? 0.35 : label === "运行" ? 0.75 : 1 }} title={`${label}: ${value}`} />
+                <Flex gap={8} style={{ padding: 2, borderRadius: 10, background: neutral.panel }}>
+                    {segments.map((item) => (
+                        <div key={item.label} style={{ flex: item.value || 0.2, minWidth: 42, height: 34, borderRadius: 8, background: item.color }} title={`${item.label}: ${item.value}`} />
                     ))}
                 </Flex>
                 <div className="grid grid-cols-4 gap-2">
@@ -350,10 +355,11 @@ function QueueVisual({ server }: { server?: AdminOpsDashboard["server"] }) {
                     <MiniStat label="失败" value={queue?.failed || 0} />
                 </div>
                 <Space wrap>
-                    {Object.entries(queue?.byType || {}).map(([type, count]) => <Tag key={type}>{type}: {count}</Tag>)}
-                    {!Object.keys(queue?.byType || {}).length ? <Typography.Text type="secondary">暂无任务类型统计</Typography.Text> : null}
+                    {Object.entries(queue?.byType || {}).map(([type, count]) => <Tag key={type} style={{ borderColor: "rgba(255,255,255,0.32)", background: "rgba(255,255,255,0.13)", color: neutral.ink, fontWeight: 600 }}>{taskTypeText(type)}：{count}</Tag>)}
+                    {!Object.keys(queue?.byType || {}).length ? <span style={{ color: neutral.sub }}>暂无任务类型统计</span> : null}
                 </Space>
-                <Typography.Text type="secondary">总样本：{total}，默认并发：{queue?.defaultUserConcurrency || 2}/用户</Typography.Text>
+                <div style={{ color: neutral.sub, fontSize: 14, lineHeight: 1.7, fontWeight: 500 }}>总样本：{total}，单用户默认/图片/视频：{queue?.defaultUserConcurrency || 2}/{queue?.imageUserConcurrency || 2}/{queue?.videoUserConcurrency || 1}，全站默认/图片/视频：{queue?.globalDefaultConcurrency || 20}/{queue?.globalImageConcurrency || 30}/{queue?.globalVideoConcurrency || 5}</div>
+                <div style={{ color: neutral.sub, fontSize: 14, lineHeight: 1.7, fontWeight: 500 }}>轮询间隔：视频 {queue?.videoPollIntervalSeconds || 5} 秒，图片 {queue?.imagePollIntervalSeconds || 3} 秒</div>
             </Space>
         </Card>
     );
@@ -362,17 +368,30 @@ function QueueVisual({ server }: { server?: AdminOpsDashboard["server"] }) {
 function MetricCard({ title, value, suffix, icon }: { title: string; value: string | number; suffix?: string; icon?: ReactNode }) {
     return (
         <Card variant="borderless">
-            <Statistic title={title} value={value} suffix={suffix} prefix={icon} />
+            <DashboardStat title={title} value={value} suffix={suffix} icon={icon} />
         </Card>
+    );
+}
+
+function DashboardStat({ title, value, suffix, icon }: { title: string; value: string | number; suffix?: string; icon?: ReactNode }) {
+    return (
+        <div>
+            <div className="text-sm" style={{ color: neutral.muted, fontWeight: 600 }}>{title}</div>
+            <div className="mt-1 flex items-baseline gap-2 text-2xl font-semibold" style={{ color: "#ffffff" }}>
+                {icon ? <span className="text-lg" style={{ color: neutral.sub }}>{icon}</span> : null}
+                <span>{value}</span>
+                {suffix ? <span className="text-sm" style={{ color: neutral.sub }}>{suffix}</span> : null}
+            </div>
+        </div>
     );
 }
 
 function HealthPill({ label, status, message }: { label: string; status: string; message: string }) {
     return (
-        <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm" style={{ borderColor: neutral.border, background: status === "ok" ? "#fff" : neutral.soft }}>
+        <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm" style={{ borderColor: neutral.border, background: status === "ok" ? neutral.panel : neutral.soft }}>
             <span className="inline-block size-2 rounded-full" style={{ background: status === "ok" ? neutral.ink : "#737373" }} />
-            <span className="font-medium text-neutral-950">{label}</span>
-            <span className="text-neutral-500">{message}</span>
+            <span className="font-medium" style={{ color: neutral.text }}>{label}</span>
+            <span style={{ color: neutral.sub }}>{message}</span>
         </div>
     );
 }
@@ -451,13 +470,21 @@ function RecentRequestRow({ item }: { item: AdminOpsRecentRequest }) {
 
 function MiniStat({ label, value }: { label: string; value: number }) {
     return (
-        <div className="rounded-lg border p-3" style={{ borderColor: neutral.border }}>
-            <div className="text-xs text-neutral-500">{label}</div>
-            <div className="mt-1 text-lg font-semibold text-neutral-950">{value}</div>
+        <div className="rounded-lg border p-3" style={{ borderColor: "rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.07)" }}>
+            <div className="text-xs" style={{ color: neutral.muted, fontWeight: 600 }}>{label}</div>
+            <div className="mt-1 text-lg font-semibold" style={{ color: "#ffffff" }}>{value}</div>
         </div>
     );
 }
 
 function EmptyState({ text, height }: { text: string; height: number }) {
-    return <div className="flex items-center justify-center text-neutral-500" style={{ height }}>{text}</div>;
+    return <div className="flex items-center justify-center" style={{ height, color: neutral.sub }}>{text}</div>;
+}
+
+function taskTypeText(type: string) {
+    if (type === "ai_image_generation") return "图片生成";
+    if (type === "ai_image_edit") return "图片编辑";
+    if (type === "ai_video_generation") return "视频生成";
+    if (type === "database_backup") return "数据库备份";
+    return type;
 }

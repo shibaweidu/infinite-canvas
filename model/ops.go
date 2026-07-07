@@ -198,12 +198,19 @@ type DatabasePoolStatus struct {
 }
 
 type TaskQueueStatus struct {
-	DefaultUserConcurrency int            `json:"defaultUserConcurrency"`
-	Pending                int64          `json:"pending"`
-	Running                int64          `json:"running"`
-	Success                int64          `json:"success"`
-	Failed                 int64          `json:"failed"`
-	ByType                 map[string]int `json:"byType"`
+	DefaultUserConcurrency   int            `json:"defaultUserConcurrency"`
+	ImageUserConcurrency     int            `json:"imageUserConcurrency"`
+	VideoUserConcurrency     int            `json:"videoUserConcurrency"`
+	GlobalDefaultConcurrency int            `json:"globalDefaultConcurrency"`
+	GlobalImageConcurrency   int            `json:"globalImageConcurrency"`
+	GlobalVideoConcurrency   int            `json:"globalVideoConcurrency"`
+	VideoPollIntervalSeconds int            `json:"videoPollIntervalSeconds"`
+	ImagePollIntervalSeconds int            `json:"imagePollIntervalSeconds"`
+	Pending                  int64          `json:"pending"`
+	Running                  int64          `json:"running"`
+	Success                  int64          `json:"success"`
+	Failed                   int64          `json:"failed"`
+	ByType                   map[string]int `json:"byType"`
 }
 
 type ServerDataDirStatus struct {

@@ -171,6 +171,7 @@ func executeVideoAITask(channel model.ModelChannel, upstreamModel string, path s
 	if taskID == "" {
 		return "", errors.New("video api did not return task id")
 	}
+	pollInterval := time.Duration(currentTaskQueueSetting().VideoPollIntervalSeconds) * time.Second
 	for attempt := 0; attempt < 240; attempt++ {
 		statusPath := resolveAITaskProxyPath(channel.BaseURL, upstreamModel, "/videos/"+taskID)
 		statusBody, _, err := doAIProxyRequest(http.MethodGet, channel, statusPath, nil, "")
@@ -198,7 +199,7 @@ func executeVideoAITask(channel model.ModelChannel, upstreamModel string, path s
 			}
 			return "", errors.New(message)
 		}
-		time.Sleep(2500 * time.Millisecond)
+		time.Sleep(pollInterval)
 	}
 	return "", errors.New("video generation timed out")
 }

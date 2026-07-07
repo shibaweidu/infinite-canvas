@@ -222,6 +222,13 @@ export type AdminServerStatus = {
     };
     taskQueue: {
         defaultUserConcurrency: number;
+        imageUserConcurrency: number;
+        videoUserConcurrency: number;
+        globalDefaultConcurrency: number;
+        globalImageConcurrency: number;
+        globalVideoConcurrency: number;
+        videoPollIntervalSeconds: number;
+        imagePollIntervalSeconds: number;
         pending: number;
         running: number;
         success: number;
@@ -832,6 +839,13 @@ export type AdminPrivateSettings = {
     };
     taskQueue: {
         defaultUserConcurrency: number;
+        imageUserConcurrency: number;
+        videoUserConcurrency: number;
+        globalDefaultConcurrency: number;
+        globalImageConcurrency: number;
+        globalVideoConcurrency: number;
+        videoPollIntervalSeconds: number;
+        imagePollIntervalSeconds: number;
     };
     auth: {
         email: {

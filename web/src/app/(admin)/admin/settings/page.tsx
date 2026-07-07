@@ -62,7 +62,7 @@ const emptySettings: AdminSettings = {
     private: {
         channels: [],
         promptSync: { enabled: true, cron: "*/5 * * * *" },
-        taskQueue: { defaultUserConcurrency: 2 },
+        taskQueue: { defaultUserConcurrency: 2, imageUserConcurrency: 2, videoUserConcurrency: 1, globalDefaultConcurrency: 20, globalImageConcurrency: 30, globalVideoConcurrency: 5, videoPollIntervalSeconds: 5, imagePollIntervalSeconds: 3 },
         auth: { email: { smtpHost: "", smtpPort: 587, smtpUsername: "", smtpPassword: "", fromEmail: "", fromName: "", subject: "邮箱验证码" }, linuxDo: { clientId: "", clientSecret: "" }, google: { clientId: "", clientSecret: "" } },
         objectStorage: { enabled: false, provider: "s3", endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: "", publicUrl: "", prefix: "", forcePathStyle: false },
     },
@@ -863,10 +863,53 @@ export default function AdminSettingsPage() {
                                     </Row>
                                 </Card>
                                 <Card id="settings-taskQueue" size="small" title="任务队列">
+                                    <Typography.Text type="secondary">单用户限制防止单个账号占满资源，全站限制保护服务器整体容量；轮询间隔越短状态越及时，请求也越频繁。</Typography.Text>
+                                    <Typography.Title level={5} style={{ marginTop: 16 }}>单用户并发</Typography.Title>
                                     <Row gutter={16} align="middle">
                                         <Col xs={24} md={8}>
-                                            <Form.Item name={["private", "taskQueue", "defaultUserConcurrency"]} label="默认用户并发数" extra="用户未单独设置时使用该值，范围 1-50">
+                                            <Form.Item name={["private", "taskQueue", "defaultUserConcurrency"]} label="默认用户并发数" extra="仅用于备份等未单独分类任务，范围 1-50">
                                                 <InputNumber min={1} max={50} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "imageUserConcurrency"]} label="图片任务并发数" extra="图片生成和图片编辑任务独立使用，范围 1-50">
+                                                <InputNumber min={1} max={50} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "videoUserConcurrency"]} label="视频任务并发数" extra="视频生成任务独立使用，范围 1-50">
+                                                <InputNumber min={1} max={50} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                    <Typography.Title level={5}>全站并发</Typography.Title>
+                                    <Row gutter={16} align="middle">
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "globalDefaultConcurrency"]} label="全站默认任务并发" extra="所有用户未单独分类任务总上限，范围 1-1000">
+                                                <InputNumber min={1} max={1000} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "globalImageConcurrency"]} label="全站图片任务并发" extra="所有用户图片生成和图片编辑总上限，范围 1-1000">
+                                                <InputNumber min={1} max={1000} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "globalVideoConcurrency"]} label="全站视频任务并发" extra="所有用户视频生成总上限，范围 1-1000">
+                                                <InputNumber min={1} max={1000} precision={0} style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                    <Typography.Title level={5}>轮询间隔</Typography.Title>
+                                    <Row gutter={16} align="middle">
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "videoPollIntervalSeconds"]} label="视频轮询时间间隔" extra="后端查询上游视频任务状态的间隔，单位秒，范围 1-60">
+                                                <InputNumber min={1} max={60} precision={0} addonAfter="秒" style={{ width: "100%" }} />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "taskQueue", "imagePollIntervalSeconds"]} label="图片轮询时间间隔" extra="预留给图片异步任务状态查询，单位秒，范围 1-60">
+                                                <InputNumber min={1} max={60} precision={0} addonAfter="秒" style={{ width: "100%" }} />
                                             </Form.Item>
                                         </Col>
                                     </Row>
@@ -1263,7 +1306,14 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             cron: setting.promptSync?.cron || "*/5 * * * *",
         },
         taskQueue: {
-            defaultUserConcurrency: Math.min(Math.max(Number(setting.taskQueue?.defaultUserConcurrency) || 2, 1), 50),
+            defaultUserConcurrency: clampConcurrency(setting.taskQueue?.defaultUserConcurrency, 2),
+            imageUserConcurrency: clampConcurrency(setting.taskQueue?.imageUserConcurrency, clampConcurrency(setting.taskQueue?.defaultUserConcurrency, 2)),
+            videoUserConcurrency: clampConcurrency(setting.taskQueue?.videoUserConcurrency, 1),
+            globalDefaultConcurrency: clampNumber(setting.taskQueue?.globalDefaultConcurrency, 20, 1, 1000),
+            globalImageConcurrency: clampNumber(setting.taskQueue?.globalImageConcurrency, 30, 1, 1000),
+            globalVideoConcurrency: clampNumber(setting.taskQueue?.globalVideoConcurrency, 5, 1, 1000),
+            videoPollIntervalSeconds: clampNumber(setting.taskQueue?.videoPollIntervalSeconds, 5, 1, 60),
+            imagePollIntervalSeconds: clampNumber(setting.taskQueue?.imagePollIntervalSeconds, 3, 1, 60),
         },
         auth: {
             email: {
@@ -1297,6 +1347,14 @@ function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}
             forcePathStyle: setting.objectStorage?.forcePathStyle === true,
         },
     };
+}
+
+function clampConcurrency(value: unknown, fallback: number) {
+    return clampNumber(value, fallback, 1, 50);
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number) {
+    return Math.min(Math.max(Number(value) || fallback, min), max);
 }
 
 function normalizeChannel(item: Partial<AdminModelChannel> = {}): AdminModelChannel {

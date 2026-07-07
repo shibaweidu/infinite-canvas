@@ -72,7 +72,7 @@ description: 当前后端主要数据表与字段说明
 | `google_id` | string | Google 用户 ID |
 | `wechat_id` | string | 微信用户 ID |
 | `status` | string | 用户状态：`active`、`ban` |
-| `task_concurrency` | number | 用户单独任务并发数，`0` 表示使用系统默认并发 |
+| `task_concurrency` | number | 用户单独默认任务并发数，仅覆盖未单独分类任务，`0` 表示使用系统默认并发 |
 | `last_login_at` | string | 最近登录时间 |
 | `extra` | json | 扩展信息，第三方资料按平台命名空间保存，如 `linuxDo` |
 | `created_at` | string | 创建时间 |
@@ -493,6 +493,7 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `channels` | object[] | 模型渠道配置列表 |
 | `promptSync` | object | GitHub 远程提示词定时同步配置 |
+| `taskQueue` | object | 后端异步任务队列并发配置 |
 | `auth` | object | 私有登录配置 |
 | `objectStorage` | object | 对象存储私有连接配置 |
 
@@ -542,6 +543,19 @@ description: 当前后端主要数据表与字段说明
 | --- | --- | --- |
 | `enabled` | bool | 是否开启定时同步，默认开启 |
 | `cron` | string | Cron 表达式，默认每 5 分钟 |
+
+`taskQueue` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `defaultUserConcurrency` | number | 默认用户并发数，仅用于数据库备份等未单独分类任务 |
+| `imageUserConcurrency` | number | 图片生成和图片编辑任务的用户并发数 |
+| `videoUserConcurrency` | number | 视频生成任务的用户并发数 |
+| `globalDefaultConcurrency` | number | 全站默认任务并发数，仅用于数据库备份等未单独分类任务 |
+| `globalImageConcurrency` | number | 全站图片生成和图片编辑任务并发数 |
+| `globalVideoConcurrency` | number | 全站视频生成任务并发数 |
+| `videoPollIntervalSeconds` | number | 视频生成任务查询上游状态的轮询间隔，单位秒 |
+| `imagePollIntervalSeconds` | number | 图片异步任务查询上游状态的轮询间隔，单位秒 |
 
 `auth.linuxDo` 当前字段：
 

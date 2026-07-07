@@ -84,6 +84,42 @@ func CountRunningSystemTasksByUser(userID string) (int64, error) {
 	return total, err
 }
 
+func CountRunningSystemTasksByUserAndTypes(userID string, types []string, exclude bool) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.SystemTask{}).Where("status = ? AND created_by = ?", model.SystemTaskStatusRunning, userID)
+	if len(types) > 0 {
+		if exclude {
+			tx = tx.Where("type NOT IN ?", types)
+		} else {
+			tx = tx.Where("type IN ?", types)
+		}
+	}
+	var total int64
+	err = tx.Count(&total).Error
+	return total, err
+}
+
+func CountRunningSystemTasksByTypes(types []string, exclude bool) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	tx := db.Model(&model.SystemTask{}).Where("status = ?", model.SystemTaskStatusRunning)
+	if len(types) > 0 {
+		if exclude {
+			tx = tx.Where("type NOT IN ?", types)
+		} else {
+			tx = tx.Where("type IN ?", types)
+		}
+	}
+	var total int64
+	err = tx.Count(&total).Error
+	return total, err
+}
+
 func SystemTaskStatusCounts() (map[model.SystemTaskStatus]int64, error) {
 	db, err := DB()
 	if err != nil {

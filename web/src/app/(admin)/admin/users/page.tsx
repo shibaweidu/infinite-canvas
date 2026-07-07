@@ -85,7 +85,7 @@ export default function AdminUsersPage() {
             render: (_, item) => <Typography.Text>{item.credits}</Typography.Text>,
         },
         {
-            title: "任务并发",
+            title: "默认任务并发",
             dataIndex: "taskConcurrency",
             width: 100,
             render: (_, item) => <Typography.Text>{item.taskConcurrency || "默认"}</Typography.Text>,
@@ -232,7 +232,7 @@ export default function AdminUsersPage() {
                             </Form.Item>
                         </Col>
                         <Col span={12}>
-                            <Form.Item name="taskConcurrency" label="任务并发数" extra="填 0 表示使用系统默认值，范围 0-50">
+                            <Form.Item name="taskConcurrency" label="默认任务并发数" extra="仅覆盖备份等未单独分类任务；图片和视频任务使用系统设置里的独立并发。填 0 表示使用系统默认值，范围 0-50">
                                 <InputNumber min={0} max={50} precision={0} style={{ width: "100%" }} />
                             </Form.Item>
                         </Col>

@@ -322,29 +322,74 @@ func nextRunnableSystemTask() (model.SystemTask, bool, error) {
 	if err != nil || len(tasks) == 0 {
 		return model.SystemTask{}, false, err
 	}
-	defaultConcurrency := defaultUserTaskConcurrency()
+	queueSetting := currentTaskQueueSetting()
 	for _, task := range tasks {
-		limit := taskUserConcurrency(task.CreatedBy, defaultConcurrency)
-		if limit <= 0 {
-			limit = defaultConcurrency
-		}
-		running, err := repository.CountRunningSystemTasksByUser(task.CreatedBy)
+		types, exclude := taskConcurrencyTypeFilter(task.Type)
+		userLimit := taskUserConcurrencyLimit(task, queueSetting)
+		userRunning, err := repository.CountRunningSystemTasksByUserAndTypes(task.CreatedBy, types, exclude)
 		if err != nil {
 			return model.SystemTask{}, false, err
 		}
-		if running < int64(limit) {
-			return task, true, nil
+		if userRunning >= int64(userLimit) {
+			continue
 		}
+		globalLimit := taskGlobalConcurrencyLimit(task, queueSetting)
+		globalRunning, err := repository.CountRunningSystemTasksByTypes(types, exclude)
+		if err != nil {
+			return model.SystemTask{}, false, err
+		}
+		if globalRunning >= int64(globalLimit) {
+			continue
+		}
+		return task, true, nil
 	}
 	return model.SystemTask{}, false, nil
 }
 
 func defaultUserTaskConcurrency() int {
+	return currentTaskQueueSetting().DefaultUserConcurrency
+}
+
+func currentTaskQueueSetting() model.TaskQueueSetting {
 	settings, err := repository.GetSettings()
 	if err != nil {
-		return 2
+		return normalizeTaskQueueSetting(model.TaskQueueSetting{})
 	}
-	return normalizePrivateSetting(settings.Private).TaskQueue.DefaultUserConcurrency
+	return normalizePrivateSetting(settings.Private).TaskQueue
+}
+
+func taskUserConcurrencyLimit(task model.SystemTask, setting model.TaskQueueSetting) int {
+	switch task.Type {
+	case aiImageGenerationTaskType, aiImageEditTaskType:
+		return setting.ImageUserConcurrency
+	case aiVideoTaskType:
+		return setting.VideoUserConcurrency
+	default:
+		return taskUserConcurrency(task.CreatedBy, setting.DefaultUserConcurrency)
+	}
+}
+
+func taskGlobalConcurrencyLimit(task model.SystemTask, setting model.TaskQueueSetting) int {
+	switch task.Type {
+	case aiImageGenerationTaskType, aiImageEditTaskType:
+		return setting.GlobalImageConcurrency
+	case aiVideoTaskType:
+		return setting.GlobalVideoConcurrency
+	default:
+		return setting.GlobalDefaultConcurrency
+	}
+}
+
+func taskConcurrencyTypeFilter(taskType string) ([]string, bool) {
+	mediaTypes := []string{aiImageGenerationTaskType, aiImageEditTaskType, aiVideoTaskType}
+	switch taskType {
+	case aiImageGenerationTaskType, aiImageEditTaskType:
+		return []string{aiImageGenerationTaskType, aiImageEditTaskType}, false
+	case aiVideoTaskType:
+		return []string{aiVideoTaskType}, false
+	default:
+		return mediaTypes, true
+	}
 }
 
 func taskUserConcurrency(userID string, fallback int) int {
@@ -657,13 +702,21 @@ func databasePoolStatus() model.DatabasePoolStatus {
 }
 
 func taskQueueStatus(counts map[model.SystemTaskStatus]int64, byType map[string]int) model.TaskQueueStatus {
+	setting := currentTaskQueueSetting()
 	return model.TaskQueueStatus{
-		DefaultUserConcurrency: defaultUserTaskConcurrency(),
-		Pending:                counts[model.SystemTaskStatusPending],
-		Running:                counts[model.SystemTaskStatusRunning],
-		Success:                counts[model.SystemTaskStatusSuccess],
-		Failed:                 counts[model.SystemTaskStatusFailed],
-		ByType:                 byType,
+		DefaultUserConcurrency:   setting.DefaultUserConcurrency,
+		ImageUserConcurrency:     setting.ImageUserConcurrency,
+		VideoUserConcurrency:     setting.VideoUserConcurrency,
+		GlobalDefaultConcurrency: setting.GlobalDefaultConcurrency,
+		GlobalImageConcurrency:   setting.GlobalImageConcurrency,
+		GlobalVideoConcurrency:   setting.GlobalVideoConcurrency,
+		VideoPollIntervalSeconds: setting.VideoPollIntervalSeconds,
+		ImagePollIntervalSeconds: setting.ImagePollIntervalSeconds,
+		Pending:                  counts[model.SystemTaskStatusPending],
+		Running:                  counts[model.SystemTaskStatusRunning],
+		Success:                  counts[model.SystemTaskStatusSuccess],
+		Failed:                   counts[model.SystemTaskStatusFailed],
+		ByType:                   byType,
 	}
 }
 

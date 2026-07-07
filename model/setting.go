@@ -189,7 +189,14 @@ type PrivateSetting struct {
 }
 
 type TaskQueueSetting struct {
-	DefaultUserConcurrency int `json:"defaultUserConcurrency"`
+	DefaultUserConcurrency   int `json:"defaultUserConcurrency"`
+	ImageUserConcurrency     int `json:"imageUserConcurrency"`
+	VideoUserConcurrency     int `json:"videoUserConcurrency"`
+	GlobalDefaultConcurrency int `json:"globalDefaultConcurrency"`
+	GlobalImageConcurrency   int `json:"globalImageConcurrency"`
+	GlobalVideoConcurrency   int `json:"globalVideoConcurrency"`
+	VideoPollIntervalSeconds int `json:"videoPollIntervalSeconds"`
+	ImagePollIntervalSeconds int `json:"imagePollIntervalSeconds"`
 }
 
 // PromptSyncSetting 提示词定时同步配置。
