@@ -118,6 +118,12 @@ func New() *gin.Engine {
 	api.GET("/prompts", middleware.OptionalAuth, gin.WrapF(handler.Prompts))
 	api.GET("/assets", middleware.OptionalAuth, gin.WrapF(handler.Assets))
 	api.GET("/account/summary", middleware.UserAuth, gin.WrapF(handler.AccountSummary))
+	api.GET("/account/styles", middleware.UserAuth, gin.WrapF(handler.AccountStyles))
+	api.POST("/account/styles", middleware.UserAuth, gin.WrapF(handler.SaveAccountStyle))
+	api.POST("/account/styles/images", middleware.UserAuth, gin.WrapF(handler.UploadAccountStyleImage))
+	api.DELETE("/account/styles/:id", middleware.UserAuth, func(c *gin.Context) {
+		handler.DeleteAccountStyle(c.Writer, c.Request, c.Param("id"))
+	})
 	api.GET("/account/tasks", middleware.UserAuth, gin.WrapF(handler.AccountTasks))
 	api.GET("/account/tasks/:id", middleware.UserAuth, func(c *gin.Context) {
 		handler.AccountTask(c.Writer, c.Request, c.Param("id"))

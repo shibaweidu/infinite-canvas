@@ -154,3 +154,16 @@ type AccountTaskList struct {
 	Items []AccountTaskItem `json:"items"`
 	Total int               `json:"total"`
 }
+
+type UserStyle struct {
+	ID          string `json:"id" gorm:"primaryKey"`
+	UserID      string `json:"userId" gorm:"index"`
+	Name        string `json:"name"`
+	Description string `json:"description" gorm:"type:text"`
+	Prompt      string `json:"prompt" gorm:"type:text"`
+	ImageURL    string `json:"imageUrl"`
+	Sort        int    `json:"sort"`
+	LastUsedAt  string `json:"lastUsedAt" gorm:"index"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+}

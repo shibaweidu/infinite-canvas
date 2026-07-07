@@ -206,6 +206,55 @@ func MarkPaymentOrderPaid(id string, providerTrade string, paidAt string) (bool,
 	return result.RowsAffected > 0, result.Error
 }
 
+func ListUserStyles(userID string) ([]model.UserStyle, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var items []model.UserStyle
+	err = db.Where("user_id = ?", userID).Order("sort asc").Order("created_at asc").Find(&items).Error
+	return items, err
+}
+
+func CountUserStyles(userID string) (int64, error) {
+	db, err := DB()
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	err = db.Model(&model.UserStyle{}).Where("user_id = ?", userID).Count(&total).Error
+	return total, err
+}
+
+func GetUserStyle(id string) (model.UserStyle, bool, error) {
+	db, err := DB()
+	if err != nil {
+		return model.UserStyle{}, false, err
+	}
+	var item model.UserStyle
+	err = db.Where("id = ?", id).First(&item).Error
+	if err != nil {
+		return item, false, ignoreAccountNotFound(err)
+	}
+	return item, true, nil
+}
+
+func SaveUserStyle(item model.UserStyle) (model.UserStyle, error) {
+	db, err := DB()
+	if err != nil {
+		return item, err
+	}
+	return item, db.Save(&item).Error
+}
+
+func DeleteUserStyle(userID string, id string) error {
+	db, err := DB()
+	if err != nil {
+		return err
+	}
+	return db.Delete(&model.UserStyle{}, "id = ? AND user_id = ?", id, userID).Error
+}
+
 func ListUserCreditLogs(userID string, types []model.CreditLogType, limit int) ([]model.CreditLog, error) {
 	db, err := DB()
 	if err != nil {

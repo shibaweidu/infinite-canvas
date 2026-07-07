@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Maximize2, Upload, X } from "lucide-react";
+import { ChevronDown, Pencil, Maximize2, Trash2, Upload, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import type { AdminProjectBriefSettings } from "@/services/api/admin";
 import { useConfigStore } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
+import { useUserStyleStore } from "@/stores/use-user-style-store";
 import { CanvasFullscreenTextEditor } from "./canvas-fullscreen-text-editor";
 import type { CanvasNodeData, CanvasNodeMetadata, CanvasProjectBrief } from "../types";
 
@@ -21,12 +23,15 @@ type ProjectBriefNodeContentProps = {
 };
 
 export type StyleLibraryItem = {
+    id?: string;
     name: string;
     category: string;
     prompt: string;
     image: string;
+    description?: string;
     isNew?: boolean;
     previews?: string[];
+    source?: "public" | "user";
 };
 
 type ProjectBriefSettings = {
@@ -209,10 +214,6 @@ export function ProjectBriefNodeContent({ node, theme, onMetadataChange, fullscr
                     updateBrief({ visualStyle: style.name, visualStyleImage: style.image, visualStylePrompt: style.prompt });
                     setStyleOpen(false);
                 }}
-                onUpload={(url) => {
-                    updateBrief({ visualStyle: "自定义风格", visualStyleImage: url, visualStylePrompt: "" });
-                    setStyleOpen(false);
-                }}
             />
             <CanvasFullscreenTextEditor open={storyEditorOpen} title="故事简述" value={brief.story} placeholder="简要描述你想要创作的故事" theme={theme} onChange={(story) => updateBrief({ story })} onClose={() => setStoryEditorOpen(false)} />
         </div>
@@ -229,7 +230,6 @@ export function StyleLibraryModal({
     onCategoryChange,
     onClose,
     onSelect,
-    onUpload,
 }: {
     open: boolean;
     theme?: Theme;
@@ -240,14 +240,73 @@ export function StyleLibraryModal({
     onCategoryChange: (category: string) => void;
     onClose: () => void;
     onSelect: (style: StyleLibraryItem) => void;
-    onUpload?: (url: string) => void;
 }) {
-    if (!open || typeof document === "undefined") return null;
     const modalTheme = theme || canvasThemes.dark;
+    const token = useUserStore((state) => state.token);
+    const userStyles = useUserStyleStore((state) => state.styles);
+    const isSaving = useUserStyleStore((state) => state.isSaving);
+    const loadStyles = useUserStyleStore((state) => state.loadStyles);
+    const saveStyle = useUserStyleStore((state) => state.saveStyle);
+    const deleteStyle = useUserStyleStore((state) => state.deleteStyle);
+    const uploadImage = useUserStyleStore((state) => state.uploadImage);
+    const [draft, setDraft] = useState<{ id?: string; name: string; description: string; imageUrl: string } | null>(null);
+    const [error, setError] = useState("");
+    const userItems = useMemo(() => (token ? userStyles : []).map(userStyleToLibraryItem), [token, userStyles]);
+    const modalCategories = useMemo(() => uniqueStrings(["全部", ...(token ? ["我的风格"] : []), ...categories]), [categories, token]);
+    const displayedStyles = category === "我的风格" ? userItems : category === "全部" ? [...userItems, ...styles] : styles;
+
+    useEffect(() => {
+        if (open && token) void loadStyles(token);
+    }, [loadStyles, open, token]);
+
+    if (!open || typeof document === "undefined") return null;
+
+    const openCreateDraft = async (file?: File) => {
+        if (!token) {
+            setError("请先登录后再保存我的风格");
+            return;
+        }
+        if (!file) return;
+        setError("");
+        try {
+            const imageUrl = await uploadImage(token, file);
+            setDraft({ name: `风格${userStyles.length + 1}`, description: "", imageUrl });
+            onCategoryChange("我的风格");
+        } catch (uploadError) {
+            setError(uploadError instanceof Error ? uploadError.message : "风格图片上传失败");
+        }
+    };
+
+    const saveDraft = async () => {
+        if (!token || !draft) return;
+        const name = draft.name.trim();
+        if (!name) {
+            setError("请输入风格名称");
+            return;
+        }
+        setError("");
+        try {
+            await saveStyle(token, { id: draft.id, name, description: draft.description.trim(), prompt: draft.description.trim(), imageUrl: draft.imageUrl });
+            setDraft(null);
+        } catch (saveError) {
+            setError(saveError instanceof Error ? saveError.message : "风格保存失败");
+        }
+    };
+
+    const removeUserStyle = async (style: StyleLibraryItem) => {
+        if (!token || !style.id) return;
+        if (!window.confirm(`确定删除“${style.name}”吗？`)) return;
+        setError("");
+        try {
+            await deleteStyle(token, style.id);
+        } catch (deleteError) {
+            setError(deleteError instanceof Error ? deleteError.message : "风格删除失败");
+        }
+    };
 
     return createPortal(
         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/35 p-4 md:p-6" onMouseDown={onClose} onWheel={(event) => event.stopPropagation()}>
-            <div className="mx-auto flex h-full max-h-[900px] w-full max-w-[1440px] flex-col overflow-hidden rounded-[18px] border shadow-[0_30px_100px_rgba(0,0,0,0.28)]" style={{ background: modalTheme.toolbar.panel, borderColor: modalTheme.toolbar.border, color: modalTheme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+            <div className="relative mx-auto flex h-full max-h-[900px] w-full max-w-[1440px] flex-col overflow-hidden rounded-[18px] border shadow-[0_30px_100px_rgba(0,0,0,0.28)]" style={{ background: modalTheme.toolbar.panel, borderColor: modalTheme.toolbar.border, color: modalTheme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                 <div className="flex items-center justify-between px-4 py-4 md:px-6 md:py-5">
                     <h3 className="text-lg font-semibold md:text-xl" style={{ color: modalTheme.node.text }}>风格库</h3>
                     <button type="button" className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full transition hover:opacity-85" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }} onClick={onClose} aria-label="关闭风格库">
@@ -256,20 +315,23 @@ export function StyleLibraryModal({
                 </div>
                 <div className="border-b px-4 pb-3 md:px-6 md:pb-4" style={{ borderColor: modalTheme.toolbar.border }}>
                     <div className="thin-scrollbar flex gap-2 overflow-x-auto pb-1">
-                        {categories.map((item) => (
+                        {modalCategories.map((item) => (
                             <button key={item} type="button" className="shrink-0 cursor-pointer rounded-full px-4 py-2 text-sm transition hover:opacity-85" style={category === item ? { background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText } : { background: modalTheme.node.fill, color: modalTheme.node.text }} onClick={() => onCategoryChange(item)}>
                                 {item}
                             </button>
                         ))}
                     </div>
+                    {error ? <div className="mt-3 rounded-lg px-3 py-2 text-xs" style={{ background: "rgba(239,68,68,0.14)", color: "#fecaca" }}>{error}</div> : null}
                 </div>
                 <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
-                        {onUpload ? <StyleUploadCard theme={modalTheme} onSelect={onUpload} /> : null}
-                        {styles.map((style) => (
-                            <button key={style.name} type="button" className="group cursor-pointer overflow-hidden rounded-2xl border text-left shadow-[0_18px_42px_rgba(0,0,0,0.16)] transition hover:opacity-95" style={{ background: modalTheme.node.panel, borderColor: selectedStyle === style.name ? modalTheme.node.activeStroke : modalTheme.node.stroke }} onClick={() => onSelect(style)}>
+                        {token && (category === "全部" || category === "我的风格") ? <StyleUploadCard theme={modalTheme} onSelect={openCreateDraft} /> : null}
+                        {displayedStyles.map((style) => (
+                            <div key={`${style.source || "public"}:${style.id || style.name}`} className="group overflow-hidden rounded-2xl border text-left shadow-[0_18px_42px_rgba(0,0,0,0.16)] transition hover:opacity-95" style={{ background: modalTheme.node.panel, borderColor: selectedStyle === style.name ? modalTheme.node.activeStroke : modalTheme.node.stroke }}>
+                                <button type="button" className="block w-full cursor-pointer text-left" onClick={() => onSelect(style)}>
                                 <div className="relative aspect-[9/16] overflow-hidden" style={{ background: modalTheme.node.fill }}>
                                     {style.isNew ? <span className="absolute left-2 top-2 z-10 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }}>New</span> : null}
+                                    {style.source === "user" ? <span className="absolute left-2 top-2 z-10 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }}>我的</span> : null}
                                     {style.image ? <img alt={style.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" src={style.image} /> : <div className="flex h-full w-full items-center justify-center px-3 text-center text-sm" style={{ color: modalTheme.node.muted }}>{style.name}</div>}
                                     {style.previews?.length ? (
                                         <div className="absolute bottom-3 right-3 flex shrink-0 -space-x-2">
@@ -279,25 +341,68 @@ export function StyleLibraryModal({
                                         </div>
                                     ) : null}
                                 </div>
+                                </button>
                                 <div className="px-3 py-2">
-                                    <div className="truncate text-sm font-semibold" style={{ color: modalTheme.node.text }}>{style.name}</div>
+                                    <div className="flex items-center gap-2">
+                                        <button type="button" className="min-w-0 flex-1 cursor-pointer truncate text-left text-sm font-semibold" style={{ color: modalTheme.node.text }} onClick={() => onSelect(style)}>
+                                            {style.name}
+                                        </button>
+                                        {style.source === "user" ? (
+                                            <div className="flex shrink-0 items-center gap-1">
+                                                <button type="button" className="grid size-7 cursor-pointer place-items-center rounded-lg transition hover:opacity-85" style={{ background: modalTheme.node.fill, color: modalTheme.node.text }} onClick={() => setDraft({ id: style.id, name: style.name, description: style.description || style.prompt || "", imageUrl: style.image })} aria-label="编辑风格" title="编辑风格">
+                                                    <Pencil className="size-3.5" />
+                                                </button>
+                                                <button type="button" className="grid size-7 cursor-pointer place-items-center rounded-lg transition hover:opacity-85" style={{ background: modalTheme.node.fill, color: modalTheme.node.text }} onClick={() => void removeUserStyle(style)} aria-label="删除风格" title="删除风格">
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </div>
+                                        ) : null}
+                                    </div>
                                 </div>
-                            </button>
+                            </div>
                         ))}
                     </div>
                 </div>
+                {draft ? (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setDraft(null)}>
+                        <div className="w-full max-w-[460px] rounded-2xl border p-4 shadow-2xl" style={{ background: modalTheme.toolbar.panel, borderColor: modalTheme.toolbar.border, color: modalTheme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                            <div className="mb-4 flex items-center justify-between">
+                                <h4 className="text-base font-semibold">{draft.id ? "编辑我的风格" : "保存到我的风格"}</h4>
+                                <button type="button" className="grid size-8 cursor-pointer place-items-center rounded-full" style={{ background: modalTheme.node.fill, color: modalTheme.node.text }} onClick={() => setDraft(null)} aria-label="关闭">
+                                    <X className="size-4" />
+                                </button>
+                            </div>
+                            <div className="grid gap-4 sm:grid-cols-[130px_1fr]">
+                                <img src={draft.imageUrl} alt={draft.name} className="aspect-[9/16] w-full rounded-2xl object-cover" style={{ background: modalTheme.node.fill }} />
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-semibold" style={{ color: modalTheme.node.text }}>
+                                        风格名称
+                                        <input className="mt-1 h-10 w-full rounded-lg border bg-transparent px-3 text-sm outline-none" style={{ borderColor: modalTheme.node.stroke, color: modalTheme.node.text }} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                                    </label>
+                                    <label className="block text-xs font-semibold" style={{ color: modalTheme.node.text }}>
+                                        风格描述
+                                        <textarea className="mt-1 h-28 w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none" style={{ borderColor: modalTheme.node.stroke, color: modalTheme.node.text }} value={draft.description} placeholder="描述画面风格、色彩、材质、镜头或氛围" onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+                                    </label>
+                                    <button type="button" className="h-10 w-full cursor-pointer rounded-xl text-sm font-semibold transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60" style={{ background: modalTheme.toolbar.activeBg, color: modalTheme.toolbar.activeText }} disabled={isSaving} onClick={() => void saveDraft()}>
+                                        {isSaving ? "保存中..." : "保存风格"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         </div>,
         document.body,
     );
 }
 
-function StyleUploadCard({ theme, onSelect }: { theme: Theme; onSelect: (url: string) => void }) {
+function StyleUploadCard({ theme, onSelect }: { theme: Theme; onSelect: (file?: File) => void }) {
     return (
         <label className="flex aspect-[9/16] min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed transition hover:opacity-85 md:min-h-[220px]" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.muted }}>
             <Upload className="h-9 w-9" />
             <span className="mt-3 text-sm">上传风格图片</span>
-            <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleStyleUpload(event.currentTarget.files?.[0], onSelect)} />
+            <input type="file" accept="image/*" className="hidden" onChange={(event) => handleStyleUpload(event, onSelect)} />
         </label>
     );
 }
@@ -383,17 +488,19 @@ function uniqueStrings(items: string[]) {
     return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
 }
 
-async function handleStyleUpload(file: File | undefined, onSelect: (url: string) => void) {
-    if (!file) return;
-    const url = await readFileAsDataURL(file);
-    onSelect(url);
+function userStyleToLibraryItem(style: { id: string; name: string; description?: string; prompt?: string; imageUrl: string }): StyleLibraryItem {
+    return {
+        id: style.id,
+        name: style.name,
+        category: "我的风格",
+        prompt: style.prompt || style.description || "",
+        description: style.description || "",
+        image: style.imageUrl,
+        source: "user",
+    };
 }
 
-function readFileAsDataURL(file: File) {
-    return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-    });
+function handleStyleUpload(event: ChangeEvent<HTMLInputElement>, onSelect: (file?: File) => void) {
+    onSelect(event.currentTarget.files?.[0]);
+    event.currentTarget.value = "";
 }

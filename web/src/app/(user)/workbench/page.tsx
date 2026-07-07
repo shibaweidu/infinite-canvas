@@ -25,6 +25,8 @@ import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
+import { useUserStyleStore } from "@/stores/use-user-style-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -91,7 +93,11 @@ export default function WorkbenchPage() {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const visualStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_VISUAL_STYLES;
+    const publicVisualStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_VISUAL_STYLES;
+    const token = useUserStore((state) => state.token);
+    const userStyles = useUserStyleStore((state) => state.styles);
+    const loadUserStyles = useUserStyleStore((state) => state.loadStyles);
+    const visualStyles = useMemo(() => [...(token ? userStyles : []).map((item) => ({ name: item.name, prompt: item.prompt || item.description, imageUrl: item.imageUrl })), ...publicVisualStyles], [publicVisualStyles, token, userStyles]);
     const addAsset = useAssetStore((state) => state.addAsset);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [mode, setMode] = useState<GenerateMode>("image");
@@ -128,6 +134,10 @@ export default function WorkbenchPage() {
     useEffect(() => {
         void initializeProjects();
     }, []);
+
+    useEffect(() => {
+        if (token) void loadUserStyles(token);
+    }, [loadUserStyles, token]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);

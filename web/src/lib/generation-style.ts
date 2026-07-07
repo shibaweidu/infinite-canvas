@@ -1,4 +1,3 @@
-import type { AdminProjectVisualStyle } from "@/services/api/admin";
 import type { ReferenceImage } from "@/types/image";
 
 export type GenerationStyle = {
@@ -7,19 +6,28 @@ export type GenerationStyle = {
     imageUrl?: string;
 };
 
+export type GenerationStyleSource = {
+    name: string;
+    prompt?: string;
+    description?: string;
+    coverUrl?: string;
+    imageUrl?: string;
+    previewUrls?: string[];
+};
+
 export function styleKey(style: Pick<GenerationStyle, "name">) {
     return style.name.trim();
 }
 
-export function findGenerationStyle(styles: AdminProjectVisualStyle[] | undefined, name?: string): GenerationStyle | null {
+export function findGenerationStyle(styles: GenerationStyleSource[] | undefined, name?: string): GenerationStyle | null {
     const key = (name || "").trim();
     if (!key) return null;
     const style = (styles || []).find((item) => item.name.trim() === key);
     if (!style) return null;
     return {
         name: style.name.trim(),
-        prompt: style.prompt?.trim(),
-        imageUrl: style.coverUrl || style.previewUrls?.find(Boolean) || "",
+        prompt: style.prompt?.trim() || style.description?.trim(),
+        imageUrl: style.coverUrl || style.imageUrl || style.previewUrls?.find(Boolean) || "",
     };
 }
 

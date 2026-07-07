@@ -12,6 +12,7 @@ import (
 
 const announcementImageMaxBytes = 10 << 20
 const adminHomeMediaMaxBytes = 120 << 20
+const userStyleImageMaxBytes = 20 << 20
 
 type paymentOrderRequest struct {
 	Type   model.PaymentOrderType `json:"type"`
@@ -43,6 +44,93 @@ func AccountSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := service.AccountSummary(user)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AccountStyles(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	result, err := service.AccountStyles(user)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func SaveAccountStyle(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	var item model.UserStyle
+	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+		Fail(w, "请求参数错误")
+		return
+	}
+	result, err := service.SaveAccountStyle(user, item)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func DeleteAccountStyle(w http.ResponseWriter, r *http.Request, id string) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	if err := service.DeleteAccountStyle(user, id); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
+func UploadAccountStyleImage(w http.ResponseWriter, r *http.Request) {
+	user, ok := service.UserFromContext(r.Context())
+	if !ok || user.ID == "" {
+		Fail(w, "请先登录")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, userStyleImageMaxBytes+1)
+	if err := r.ParseMultipartForm(userStyleImageMaxBytes); err != nil {
+		Fail(w, "图片过大或上传格式不正确")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		Fail(w, "请上传风格图片")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil || len(data) == 0 {
+		Fail(w, "图片读取失败")
+		return
+	}
+	if len(data) > userStyleImageMaxBytes {
+		Fail(w, "风格图片不能超过 20MB")
+		return
+	}
+	mimeType := strings.TrimSpace(strings.Split(header.Header.Get("Content-Type"), ";")[0])
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType = http.DetectContentType(data)
+	}
+	result, err := service.UploadUserStyleImage(header.Filename, mimeType, data)
 	if err != nil {
 		FailError(w, err)
 		return

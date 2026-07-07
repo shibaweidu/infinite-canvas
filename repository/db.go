@@ -75,6 +75,7 @@ func DB() (*gorm.DB, error) {
 			&model.CreditPackage{},
 			&model.PaymentSettings{},
 			&model.PaymentOrder{},
+			&model.UserStyle{},
 			&model.HomeSlide{},
 			&model.HomeWork{},
 			&model.HomeCategory{},

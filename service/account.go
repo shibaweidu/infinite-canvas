@@ -476,6 +476,61 @@ func AccountSummary(user model.AuthUser) (model.AccountSummary, error) {
 	return model.AccountSummary{User: user, Plans: plans, CreditPackages: packages, RechargeRecords: recharge, ConsumeRecords: consume}, nil
 }
 
+func AccountStyles(user model.AuthUser) ([]model.UserStyle, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return nil, safeMessageError{message: "请先登录"}
+	}
+	return repository.ListUserStyles(user.ID)
+}
+
+func SaveAccountStyle(user model.AuthUser, item model.UserStyle) (model.UserStyle, error) {
+	if strings.TrimSpace(user.ID) == "" {
+		return item, safeMessageError{message: "请先登录"}
+	}
+	item.ID = strings.TrimSpace(item.ID)
+	if item.ID != "" {
+		current, ok, err := repository.GetUserStyle(item.ID)
+		if err != nil {
+			return item, err
+		}
+		if !ok || current.UserID != user.ID {
+			return item, safeMessageError{message: "风格不存在"}
+		}
+		item.UserID = user.ID
+		item.CreatedAt = current.CreatedAt
+		if item.ImageURL == "" {
+			item.ImageURL = current.ImageURL
+		}
+	} else {
+		item.ID = newID("style")
+		item.UserID = user.ID
+		item.CreatedAt = now()
+	}
+	item.Name = strings.TrimSpace(item.Name)
+	item.Description = strings.TrimSpace(item.Description)
+	item.Prompt = strings.TrimSpace(item.Prompt)
+	item.ImageURL = strings.TrimSpace(item.ImageURL)
+	if item.ImageURL == "" {
+		return item, safeMessageError{message: "请先上传风格图片"}
+	}
+	if item.Name == "" {
+		count, _ := repository.CountUserStyles(user.ID)
+		item.Name = "风格" + strconv.FormatInt(count+1, 10)
+	}
+	if item.Prompt == "" {
+		item.Prompt = item.Description
+	}
+	item.UpdatedAt = now()
+	return repository.SaveUserStyle(item)
+}
+
+func DeleteAccountStyle(user model.AuthUser, id string) error {
+	if strings.TrimSpace(user.ID) == "" {
+		return safeMessageError{message: "请先登录"}
+	}
+	return repository.DeleteUserStyle(user.ID, strings.TrimSpace(id))
+}
+
 func AccountTasks(user model.AuthUser, q model.TaskLogQuery) (model.AccountTaskList, error) {
 	if strings.TrimSpace(user.ID) == "" {
 		return model.AccountTaskList{}, safeMessageError{message: "请先登录"}

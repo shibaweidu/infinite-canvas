@@ -1,4 +1,6 @@
-import { apiGet, apiPost } from "@/services/api/request";
+import axios from "axios";
+
+import { apiDelete, apiGet, apiPost } from "@/services/api/request";
 
 export const AUTH_TOKEN_KEY = "infinite-canvas-auth-token-v1";
 
@@ -81,6 +83,26 @@ export type AccountSummary = {
     creditPackages: CreditPackage[];
     rechargeRecords: AccountCreditLog[];
     consumeRecords: AccountCreditLog[];
+};
+
+export type UserStyle = {
+    id: string;
+    userId: string;
+    name: string;
+    description: string;
+    prompt: string;
+    imageUrl: string;
+    sort: number;
+    lastUsedAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type AccountUploadedObject = {
+    url: string;
+    key: string;
+    mimeType: string;
+    bytes: number;
 };
 
 export type AccountTaskStatus = "pending" | "running" | "success" | "failed" | "canceled";
@@ -183,6 +205,28 @@ export async function fetchCurrentUser(token?: string) {
 
 export async function fetchAccountSummary(token: string) {
     return apiGet<AccountSummary>("/api/account/summary", undefined, token);
+}
+
+export async function fetchAccountStyles(token: string) {
+    return apiGet<UserStyle[]>("/api/account/styles", undefined, token);
+}
+
+export async function saveAccountStyle(token: string, item: Partial<UserStyle>) {
+    return apiPost<UserStyle>("/api/account/styles", item, token);
+}
+
+export async function deleteAccountStyle(token: string, id: string) {
+    return apiDelete<boolean>(`/api/account/styles/${encodeURIComponent(id)}`, token);
+}
+
+export async function uploadAccountStyleImage(token: string, file: File) {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    const response = await axios.post<{ code: number; data: AccountUploadedObject; msg: string }>("/api/account/styles/images", body, {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.data.code !== 0) throw new Error(response.data.msg || "风格图片上传失败");
+    return response.data.data;
 }
 
 export async function fetchAccountTasks(token: string, query: AccountTaskQuery = {}) {

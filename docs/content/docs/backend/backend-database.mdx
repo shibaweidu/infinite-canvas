@@ -31,6 +31,7 @@ description: 当前后端主要数据表与字段说明
 - `credit_packages`
 - `payment_settings`
 - `payment_orders`
+- `user_styles`
 - `home_slides`
 - `home_works`
 - `home_categories`
@@ -355,6 +356,23 @@ description: 当前后端主要数据表与字段说明
 | `provider` | string | 支付通道，当前固定为 `epay` |
 | `provider_trade` | string | 第三方支付流水号 |
 | `paid_at` | string | 支付成功时间 |
+| `created_at` | string | 创建时间 |
+| `updated_at` | string | 更新时间 |
+
+### user_styles
+
+用户自定义风格表。用于保存用户在前台风格库上传的风格图片、名称和描述，生成时可作为风格参考图和风格提示词使用。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 主键 |
+| `user_id` | string | 用户 ID |
+| `name` | string | 风格名称，默认按 `风格1`、`风格2` 递增 |
+| `description` | text | 用户填写的风格描述 |
+| `prompt` | text | 生成时注入的风格提示词，默认跟随描述 |
+| `image_url` | string | 上传到对象存储后的风格图片公开地址 |
+| `sort` | number | 排序值 |
+| `last_used_at` | string | 最近使用时间 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 

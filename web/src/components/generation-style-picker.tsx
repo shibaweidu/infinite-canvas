@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Palette, X } from "lucide-react";
 
 import { StyleLibraryModal, normalizeProjectBriefSettings, type StyleLibraryItem } from "@/app/(user)/canvas/components/canvas-project-brief-node";
@@ -8,6 +8,8 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import type { AdminProjectVisualStyle } from "@/services/api/admin";
 import { useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
+import { useUserStyleStore } from "@/stores/use-user-style-store";
 
 const EMPTY_STYLES: AdminProjectVisualStyle[] = [];
 const EMPTY_CATEGORIES: string[] = [];
@@ -25,15 +27,23 @@ export function GenerationStylePicker({ value = "", onChange, compact = false, c
     const configured = useConfigStore((state) => state.publicSettings?.projectBrief);
     const rawStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_STYLES;
     const rawCategories = useConfigStore((state) => state.publicSettings?.projectBrief.styleCategories) || EMPTY_CATEGORIES;
+    const token = useUserStore((state) => state.token);
+    const userStyles = useUserStyleStore((state) => state.styles);
+    const loadStyles = useUserStyleStore((state) => state.loadStyles);
     const settings = useMemo(() => normalizeProjectBriefSettings(configured), [configured]);
     const [open, setOpen] = useState(false);
     const [category, setCategory] = useState("全部");
-    const selected = settings.visualStyles.find((item) => item.name === value) || rawStyles.find((item) => item.name === value);
+    const userStyleItems = useMemo<StyleLibraryItem[]>(() => (token ? userStyles : []).map((item) => ({ id: item.id, name: item.name, category: "我的风格", prompt: item.prompt || item.description || "", description: item.description, image: item.imageUrl, source: "user" })), [token, userStyles]);
+    const selected = userStyleItems.find((item) => item.name === value) || settings.visualStyles.find((item) => item.name === value) || rawStyles.find((item) => item.name === value);
     const categories = useMemo(() => ["全部", ...uniqueStrings([...rawCategories, ...settings.visualStyles.map((item) => item.category)])], [rawCategories, settings.visualStyles]);
     const visibleStyles = settings.visualStyles.filter((item) => category === "全部" || item.category === category);
     const label = selected?.name || (compact ? "风格" : "选择风格");
 
-    if (!settings.visualStyles.length) return null;
+    useEffect(() => {
+        if (token) void loadStyles(token);
+    }, [loadStyles, token]);
+
+    if (!settings.visualStyles.length && !userStyleItems.length && !token) return null;
 
     const selectStyle = (style: StyleLibraryItem) => {
         onChange(style.name);

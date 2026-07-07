@@ -221,7 +221,7 @@ export function AccountDialog({ open, onClose, initialTab = "profile" }: Account
             open={open}
             onCancel={onClose}
             footer={null}
-            width={960}
+            width="min(1320px, calc(100vw - 48px))"
             closeIcon={<X className="size-4" />}
             styles={{
                 body: { padding: 0 },

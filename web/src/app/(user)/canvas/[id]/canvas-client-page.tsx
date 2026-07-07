@@ -19,6 +19,8 @@ import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useUserStore } from "@/stores/use-user-store";
+import { useUserStyleStore } from "@/stores/use-user-style-store";
 import { cropDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "../utils/canvas-node-size";
 import { extractVideoPromptFrames } from "../utils/canvas-video-frames";
@@ -726,7 +728,11 @@ function InfiniteCanvasPage() {
 
     const config = useConfigStore((state) => state.config);
     const effectiveConfig = useEffectiveConfig();
-    const visualStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_VISUAL_STYLES;
+    const publicVisualStyles = useConfigStore((state) => state.publicSettings?.projectBrief.visualStyles) || EMPTY_VISUAL_STYLES;
+    const token = useUserStore((state) => state.token);
+    const userStyles = useUserStyleStore((state) => state.styles);
+    const loadUserStyles = useUserStyleStore((state) => state.loadStyles);
+    const visualStyles = useMemo(() => [...(token ? userStyles : []).map((item) => ({ name: item.name, prompt: item.prompt || item.description, imageUrl: item.imageUrl })), ...publicVisualStyles], [publicVisualStyles, token, userStyles]);
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -826,6 +832,10 @@ function InfiniteCanvasPage() {
         },
         [cleanupAssetImages],
     );
+
+    useEffect(() => {
+        if (token) void loadUserStyles(token);
+    }, [loadUserStyles, token]);
 
     useEffect(() => {
         if (!hydrated) return;

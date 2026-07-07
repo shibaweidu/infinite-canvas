@@ -52,6 +52,20 @@ func UploadHomeMedia(filename string, mimeType string, data []byte) (UploadedObj
 	return uploadObjectStorageFile("home", filename, mimeType, data)
 }
 
+func UploadUserStyleImage(filename string, mimeType string, data []byte) (UploadedObject, error) {
+	if len(data) == 0 {
+		return UploadedObject{}, safeMessageError{message: "风格图片为空"}
+	}
+	mimeType = normalizeHomeMediaMimeType(filename, mimeType)
+	if !strings.HasPrefix(mimeType, "image/") {
+		return UploadedObject{}, safeMessageError{message: "请上传图片文件"}
+	}
+	if len(data) > 20<<20 {
+		return UploadedObject{}, safeMessageError{message: "风格图片不能超过 20MB"}
+	}
+	return uploadObjectStorageFile("user-styles", filename, mimeType, data)
+}
+
 func TestObjectStorage(setting model.ObjectStorageSetting) (string, error) {
 	saved, err := repository.GetSettings()
 	if err != nil {
