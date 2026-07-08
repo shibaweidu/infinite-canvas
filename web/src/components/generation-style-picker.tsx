@@ -43,8 +43,6 @@ export function GenerationStylePicker({ value = "", onChange, compact = false, c
         if (token) void loadStyles(token);
     }, [loadStyles, token]);
 
-    if (!settings.visualStyles.length && !userStyleItems.length && !token) return null;
-
     const selectStyle = (style: StyleLibraryItem) => {
         onChange(style.name);
         setOpen(false);

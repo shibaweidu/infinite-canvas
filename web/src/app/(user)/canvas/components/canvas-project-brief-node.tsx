@@ -325,7 +325,7 @@ export function StyleLibraryModal({
                 </div>
                 <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
-                        {token && (category === "全部" || category === "我的风格") ? <StyleUploadCard theme={modalTheme} onSelect={openCreateDraft} /> : null}
+                        {category === "全部" || category === "我的风格" ? <StyleUploadCard theme={modalTheme} onSelect={openCreateDraft} /> : null}
                         {displayedStyles.map((style) => (
                             <div key={`${style.source || "public"}:${style.id || style.name}`} className="group overflow-hidden rounded-2xl border text-left shadow-[0_18px_42px_rgba(0,0,0,0.16)] transition hover:opacity-95" style={{ background: modalTheme.node.panel, borderColor: selectedStyle === style.name ? modalTheme.node.activeStroke : modalTheme.node.stroke }}>
                                 <button type="button" className="block w-full cursor-pointer text-left" onClick={() => onSelect(style)}>

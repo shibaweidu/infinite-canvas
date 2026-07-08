@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Bold, Heading1, Heading2, Heading3, Italic, Palette, Pilcrow, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { plainTextToCanvasRichTextHtml, sanitizeCanvasRichTextHtml } from "../utils/canvas-rich-text";
 
 export type CanvasFullscreenTextFormat = {
     fontSize?: number;
@@ -18,18 +19,95 @@ type CanvasFullscreenTextEditorProps = {
     open: boolean;
     title: string;
     value: string;
+    htmlValue?: string;
     placeholder?: string;
+    format?: CanvasFullscreenTextFormat;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     onChange: (value: string) => void;
+    onRichChange?: (value: string, htmlValue: string) => void;
+    onFormatChange?: (patch: CanvasFullscreenTextFormat) => void;
     onClose: () => void;
 };
 
-export function CanvasFullscreenTextEditor({ open, title, value, placeholder, theme, onChange, onClose }: CanvasFullscreenTextEditorProps) {
+export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, placeholder, format: externalFormat, theme, onChange, onRichChange, onFormatChange, onClose }: CanvasFullscreenTextEditorProps) {
+    const editorRef = useRef<HTMLDivElement>(null);
+    const lastHtmlRef = useRef("");
+    const richTextEnabled = htmlValue !== undefined || Boolean(onRichChange);
     const [format, setFormat] = useState<CanvasFullscreenTextFormat>({ textStyle: "body", fontSize: 16 });
 
     useEffect(() => {
-        if (open) setFormat({ textStyle: "body", fontSize: 16 });
-    }, [open, title]);
+        if (open) setFormat({ textStyle: externalFormat?.textStyle || "body", fontSize: externalFormat?.fontSize || 16, textBold: externalFormat?.textBold, textItalic: externalFormat?.textItalic, textBackground: externalFormat?.textBackground });
+    }, [externalFormat?.fontSize, externalFormat?.textBackground, externalFormat?.textBold, externalFormat?.textItalic, externalFormat?.textStyle, open, title]);
+
+    useEffect(() => {
+        if (!open || !richTextEnabled || !editorRef.current) return;
+        const nextHtml = sanitizeCanvasRichTextHtml(htmlValue || plainTextToCanvasRichTextHtml(value, externalFormat));
+        if (nextHtml !== lastHtmlRef.current) {
+            editorRef.current.innerHTML = nextHtml;
+            lastHtmlRef.current = nextHtml;
+        }
+    }, [externalFormat, htmlValue, open, richTextEnabled, value]);
+
+    const syncRichValue = useCallback(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+        const nextHtml = sanitizeCanvasRichTextHtml(editor.innerHTML);
+        const nextValue = editor.innerText.replace(/\u00a0/g, " ").replace(/\n$/, "");
+        lastHtmlRef.current = nextHtml;
+        if (editor.innerHTML !== nextHtml) editor.innerHTML = nextHtml;
+        if (onRichChange) onRichChange(nextValue, nextHtml);
+        else onChange(nextValue);
+    }, [onChange, onRichChange]);
+
+    const refreshSelectionFormat = useCallback(() => {
+        if (!richTextEnabled || typeof document === "undefined") return;
+        const block = String(document.queryCommandValue("formatBlock") || "body").replace(/[<>]/g, "").toLowerCase();
+        const textStyle = block === "h1" || block === "h2" || block === "h3" ? block : "body";
+        setFormat((current) => ({
+            ...current,
+            textStyle,
+            fontSize: textStyle === "h1" ? 26 : textStyle === "h2" ? 22 : textStyle === "h3" ? 18 : 16,
+            textBold: document.queryCommandState("bold"),
+            textItalic: document.queryCommandState("italic"),
+        }));
+    }, [richTextEnabled]);
+
+    useEffect(() => {
+        if (!open || !richTextEnabled || typeof document === "undefined") return;
+        document.addEventListener("selectionchange", refreshSelectionFormat);
+        return () => document.removeEventListener("selectionchange", refreshSelectionFormat);
+    }, [open, refreshSelectionFormat, richTextEnabled]);
+
+    const applyRichFormat = useCallback(
+        (patch: CanvasFullscreenTextFormat) => {
+            const editor = editorRef.current;
+            if (!editor || typeof document === "undefined") return;
+            editor.focus();
+            if (patch.textStyle) document.execCommand("formatBlock", false, patch.textStyle === "body" ? "p" : patch.textStyle);
+            if (patch.textBold !== undefined) document.execCommand("bold");
+            if (patch.textItalic !== undefined) document.execCommand("italic");
+            refreshSelectionFormat();
+            syncRichValue();
+        },
+        [refreshSelectionFormat, syncRichValue],
+    );
+
+    const handleFormatChange = useCallback(
+        (patch: CanvasFullscreenTextFormat) => {
+            if (patch.textBackground !== undefined) {
+                onFormatChange?.(patch);
+                setFormat((current) => ({ ...current, ...patch }));
+                return;
+            }
+            if (richTextEnabled) {
+                applyRichFormat(patch);
+                return;
+            }
+            setFormat((current) => ({ ...current, ...patch }));
+            onFormatChange?.(patch);
+        },
+        [applyRichFormat, onFormatChange, richTextEnabled],
+    );
 
     if (!open || typeof document === "undefined") return null;
 
@@ -43,16 +121,33 @@ export function CanvasFullscreenTextEditor({ open, title, value, placeholder, th
             </header>
             <div className="min-h-0 flex-1 overflow-hidden p-4">
                 <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-3">
-                    <CanvasFullscreenTextToolbar format={format} theme={theme} onFormatChange={(patch) => setFormat((current) => ({ ...current, ...patch }))} />
-                    <textarea
-                        autoFocus
-                        className="thin-scrollbar min-h-0 flex-1 resize-none rounded-xl border bg-transparent p-6 leading-7 outline-none"
-                        style={{ ...canvasFullscreenTextStyle(format, theme), borderColor: theme.toolbar.border }}
-                        value={value}
-                        placeholder={placeholder}
-                        onChange={(event) => onChange(event.target.value)}
-                        onWheel={(event) => event.stopPropagation()}
-                    />
+                    <CanvasFullscreenTextToolbar format={format} theme={theme} onFormatChange={handleFormatChange} />
+                    {richTextEnabled ? (
+                        <div
+                            ref={editorRef}
+                            contentEditable
+                            suppressContentEditableWarning
+                            autoFocus
+                            className="thin-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl border bg-transparent p-6 leading-7 outline-none empty:before:pointer-events-none empty:before:content-[attr(data-placeholder)] [&_b]:font-bold [&_br]:block [&_em]:italic [&_h1]:my-2 [&_h1]:text-[1.65em] [&_h1]:font-bold [&_h2]:my-2 [&_h2]:text-[1.35em] [&_h2]:font-bold [&_h3]:my-1.5 [&_h3]:text-[1.15em] [&_h3]:font-semibold [&_i]:italic [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-1 [&_strong]:font-bold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6"
+                            data-placeholder={placeholder || ""}
+                            style={{ color: theme.node.text, background: externalFormat?.textBackground || theme.node.fill, borderColor: theme.toolbar.border }}
+                            onInput={syncRichValue}
+                            onBlur={syncRichValue}
+                            onKeyUp={refreshSelectionFormat}
+                            onMouseUp={refreshSelectionFormat}
+                            onWheel={(event) => event.stopPropagation()}
+                        />
+                    ) : (
+                        <textarea
+                            autoFocus
+                            className="thin-scrollbar min-h-0 flex-1 resize-none rounded-xl border bg-transparent p-6 leading-7 outline-none"
+                            style={{ ...canvasFullscreenTextStyle(format, theme), borderColor: theme.toolbar.border }}
+                            value={value}
+                            placeholder={placeholder}
+                            onChange={(event) => onChange(event.target.value)}
+                            onWheel={(event) => event.stopPropagation()}
+                        />
+                    )}
                 </div>
             </div>
         </div>,
@@ -94,7 +189,7 @@ export function CanvasFullscreenTextToolbar({ format, theme, onFormatChange }: {
 
 function CanvasFullscreenTextTool({ title, active, children, onClick }: { title: string; active?: boolean; children: ReactNode; onClick: () => void }) {
     return (
-        <button type="button" className="grid size-8 place-items-center rounded-lg transition hover:scale-[1.03]" style={{ background: active ? "color-mix(in srgb, currentColor 14%, transparent)" : "transparent", color: "inherit" }} title={title} onClick={onClick}>
+        <button type="button" className="grid size-8 place-items-center rounded-lg transition hover:scale-[1.03]" style={{ background: active ? "color-mix(in srgb, currentColor 14%, transparent)" : "transparent", color: "inherit" }} title={title} onMouseDown={(event) => event.preventDefault()} onClick={onClick}>
             {children}
         </button>
     );

@@ -125,6 +125,7 @@ export type CanvasBoardMediaEditorTarget =
 
 export type CanvasNodeMetadata = {
     content?: string;
+    contentHtml?: string;
     composerContent?: string;
     prompt?: string;
     status?: CanvasNodeStatus;

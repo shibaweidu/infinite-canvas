@@ -43,7 +43,7 @@ import { InfiniteCanvas } from "../components/infinite-canvas";
 import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode, type CanvasPromptSelectOption, type CanvasStoryboardShotOption } from "../components/canvas-node-prompt-panel";
-import { CanvasFullscreenTextToolbar, canvasFullscreenTextStyle } from "../components/canvas-fullscreen-text-editor";
+import { CanvasFullscreenTextEditor } from "../components/canvas-fullscreen-text-editor";
 import { ProjectBriefNodeContent } from "../components/canvas-project-brief-node";
 import { CanvasShortDramaNav, type ShortDramaStepType } from "../components/canvas-short-drama-nav";
 import { CanvasToolbar } from "../components/canvas-toolbar";
@@ -546,9 +546,9 @@ function findConnectedShortDramaTarget(sourceNodeId: string, targetType: ShortDr
 }
 
 function shortDramaNextLabel(node: CanvasNodeData) {
-    if (node.type === CanvasNodeType.ProjectBrief) return "下一步：生成剧本";
-    if (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script") return "下一步：生成角色";
-    if (node.type === CanvasNodeType.SubjectBoard) return "下一步：生成分镜";
+    if (node.type === CanvasNodeType.ProjectBrief) return "生成剧本";
+    if (node.type === CanvasNodeType.Text && node.metadata?.textRole === "script") return "生成角色";
+    if (node.type === CanvasNodeType.SubjectBoard) return "生成分镜";
     return undefined;
 }
 
@@ -2579,8 +2579,8 @@ function InfiniteCanvasPage() {
         );
     }, []);
 
-    const handleNodeContentChange = useCallback((nodeId: string, content: string) => {
-        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, content, status: content.trim() ? NODE_STATUS_SUCCESS : undefined } } : node)));
+    const handleNodeContentChange = useCallback((nodeId: string, content: string, contentHtml?: string) => {
+        setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, content, contentHtml: contentHtml && content.trim() ? contentHtml : undefined, status: content.trim() ? NODE_STATUS_SUCCESS : undefined } } : node)));
     }, []);
 
     const toggleBatchExpanded = useCallback((nodeId: string) => {
@@ -4677,26 +4677,33 @@ function CanvasNodeFullscreenEditor({
     node: CanvasNodeData;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     onClose: () => void;
-    onContentChange: (nodeId: string, content: string) => void;
+    onContentChange: (nodeId: string, content: string, contentHtml?: string) => void;
     onMetadataChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     subjectReferences: CanvasStoryboardReference[];
     onOpenMediaEditor: (target: CanvasBoardMediaEditorTarget) => void;
 }) {
+    if (node.type === CanvasNodeType.Text) {
+        return (
+            <CanvasFullscreenTextEditor
+                open
+                title={node.title}
+                value={node.metadata?.content || ""}
+                htmlValue={node.metadata?.contentHtml || ""}
+                format={node.metadata}
+                theme={theme}
+                onChange={(content) => onContentChange(node.id, content)}
+                onRichChange={(content, contentHtml) => onContentChange(node.id, content, contentHtml)}
+                onFormatChange={(patch) => onMetadataChange(node.id, patch)}
+                onClose={onClose}
+            />
+        );
+    }
+
     return (
         <div className="fixed inset-0 z-[120] flex flex-col" style={{ background: theme.canvas.background, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
             <FullscreenHeader title={node.title} meta={nodeTypeName(node.type)} theme={theme} onClose={onClose} />
             <div className="min-h-0 flex-1 overflow-hidden p-4">
-                {node.type === CanvasNodeType.Text ? (
-                    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-3">
-                        <CanvasFullscreenTextToolbar format={node.metadata} theme={theme} onFormatChange={(patch) => onMetadataChange(node.id, patch)} />
-                        <textarea
-                            className="thin-scrollbar min-h-0 flex-1 resize-none rounded-xl border bg-transparent p-6 leading-7 outline-none"
-                            style={{ ...canvasFullscreenTextStyle(node.metadata, theme), borderColor: theme.toolbar.border }}
-                            value={node.metadata?.content || ""}
-                            onChange={(event) => onContentChange(node.id, event.target.value)}
-                        />
-                    </div>
-                ) : node.type === CanvasNodeType.ProjectBrief ? (
+                {node.type === CanvasNodeType.ProjectBrief ? (
                     <div className="mx-auto h-full w-full max-w-6xl overflow-hidden rounded-xl border" style={{ borderColor: theme.toolbar.border, background: theme.node.fill }}>
                         <ProjectBriefNodeContent node={node} theme={theme} onMetadataChange={onMetadataChange} fullscreen />
                     </div>

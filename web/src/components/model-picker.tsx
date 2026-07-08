@@ -6,7 +6,7 @@ import { Check, ChevronDown, Cpu } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { cn } from "@/lib/utils";
-import { modelOptionName, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelOptionName, selectableModelsByCapability, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AdminModelCost, AdminModelType } from "@/services/api/admin";
 
@@ -47,7 +47,8 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
     const allowLocal = publicSettings?.modelChannel.allowCustomChannel !== false;
     const pickerType = modelType || capability;
     const cloudModels = useMemo(() => buildCloudModels(publicSettings?.modelChannel.modelCosts || [], publicSettings?.modelChannel.availableModels || config.models, pickerType), [publicSettings, config.models, pickerType]);
-    const localModels = useMemo(() => (allowLocal ? buildLocalModels(rawConfig.models, pickerType) : []), [allowLocal, rawConfig.models, pickerType]);
+    const localModelOptions = useMemo(() => localSelectableModels(rawConfig, pickerType), [rawConfig, pickerType]);
+    const localModels = useMemo(() => (allowLocal ? buildLocalModels(localModelOptions, pickerType) : []), [allowLocal, localModelOptions, pickerType]);
     const current = value || "";
     const currentMeta = cloudModels.find((item) => item.model === current) || localModels.find((item) => item.model === current);
     const displayName = currentMeta ? displayModelName(currentMeta, current) : "";
@@ -267,6 +268,11 @@ function buildLocalModels(models: string[], modelType?: AdminModelType) {
     return Array.from(new Set(models.map((item) => item.trim()).filter(Boolean)))
         .filter((model) => !modelType || inferModelType(model) === modelType)
         .map((model) => ({ model, type: inferModelType(model) }));
+}
+
+function localSelectableModels(config: AiConfig, modelType?: AdminModelType) {
+    if (modelType) return selectableModelsByCapability(config, modelType);
+    return Array.from(new Set([...config.imageModels, ...config.videoModels, ...config.textModels, ...config.audioModels].map((model) => model.trim()).filter(Boolean)));
 }
 
 function displayModelName(model: PickerModel | undefined, fallback: string) {

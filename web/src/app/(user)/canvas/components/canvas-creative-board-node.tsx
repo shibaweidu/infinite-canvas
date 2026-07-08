@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { Check, FileVideo, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, Search, Upload, Wand2 } from "lucide-react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { Check, FileVideo, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, Search, Trash2, Upload, Wand2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { type CanvasBoardMediaEditorTarget, type CanvasMediaSlot, type CanvasNodeData, type CanvasNodeMetadata, type CanvasStoryboard, type CanvasStoryboardGenerationMode, type CanvasStoryboardReference, type CanvasStoryboardShot, type CanvasSubjectBoard, type CanvasSubjectBoardGroup, type CanvasSubjectBoardItem, type CanvasSubjectKind } from "../types";
@@ -34,8 +34,10 @@ const storyboardFullscreenGridColumns = "52px minmax(260px,1fr) minmax(200px,.7f
 
 export function SubjectBoardNodeContent({ node, theme, onMetadataChange, onOpenMediaEditor, fullscreen }: BoardContentProps) {
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [activeGroupId, setActiveGroupId] = useState("characters");
     const board = normalizeSubjectBoard(node.metadata?.subjectBoard);
     const total = board.groups.reduce((sum, group) => sum + group.items.length, 0);
+    const activeGroup = board.groups.find((group) => group.id === activeGroupId) || board.groups[0]!;
 
     const updateBoard = (next: CanvasSubjectBoard) => onMetadataChange?.(node.id, { subjectBoard: next, status: "success" });
     const updateItem = (groupId: string, itemId: string, patch: Partial<CanvasSubjectBoardItem>) => {
@@ -73,27 +75,55 @@ export function SubjectBoardNodeContent({ node, theme, onMetadataChange, onOpenM
     };
 
     return (
-        <BoardShell theme={theme} title="角色板" meta={`${total} 个主体`}>
-            <div className="space-y-6">
-                {board.groups.map((group) => (
-                    <section key={group.id} className="min-w-0">
-                        <div className="mb-2 flex items-center justify-between gap-3">
+        <BoardShell theme={theme} title="角色板" meta={`${total} 个主体`} action={<BoardActionButton theme={theme} label={`添加${activeGroup.title}`} icon={<Plus className="size-3.5" />} onClick={() => addItem(activeGroup)} />}>
+            <div className={fullscreen ? "grid min-h-full grid-cols-[168px_minmax(0,1fr)] gap-4" : "grid min-h-full grid-cols-[132px_minmax(0,1fr)] gap-3"}>
+                <aside className="rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.node.fill }}>
+                    <div className="mb-2 px-2 text-[10px] font-medium uppercase tracking-[0.16em]" style={{ color: theme.node.muted }}>
+                        主体分类
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        {board.groups.map((group) => {
+                            const active = group.id === activeGroup.id;
+                            return (
+                                <button
+                                    key={group.id}
+                                    type="button"
+                                    className="flex h-10 w-full items-center justify-between gap-2 rounded-lg px-2 text-left text-xs font-medium transition"
+                                    style={{ background: active ? theme.toolbar.activeBg : "transparent", color: active ? theme.node.text : theme.node.muted, border: `1px solid ${active ? theme.node.activeStroke : "transparent"}` }}
+                                    onClick={() => setActiveGroupId(group.id)}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onPointerDown={(event) => event.stopPropagation()}
+                                >
+                                    <span>{group.title}</span>
+                                    <span className="rounded-full px-1.5 py-0.5 text-[10px]" style={{ background: active ? theme.node.fill : theme.toolbar.panel, color: theme.node.text }}>
+                                        {group.items.length}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </aside>
+                <section className="min-w-0 rounded-xl border p-3" style={{ borderColor: theme.toolbar.border, background: `${theme.toolbar.panel}99` }}>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
                             <h3 className="text-sm font-semibold" style={{ color: theme.node.text }}>
-                                {group.title}
+                                {activeGroup.title}
                             </h3>
-                            <BoardActionButton theme={theme} label="添加" icon={<Plus className="size-3.5" />} onClick={() => addItem(group)} />
+                            <p className="mt-1 text-[11px]" style={{ color: theme.node.muted }}>
+                                {activeGroup.items.length ? `${activeGroup.items.length} 个${activeGroup.title}主体` : `管理${activeGroup.title}主体，供分镜和生成时引用`}
+                            </p>
                         </div>
-                        {group.items.length ? (
-                            <div className={fullscreen ? "grid grid-cols-[repeat(auto-fill,minmax(440px,1fr))] gap-4" : "grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3"}>
-                                {group.items.map((item) => (
-                                    <SubjectCard key={item.id} nodeId={node.id} groupId={group.id} item={item} theme={theme} editing={editingId === item.id} fullscreen={fullscreen} active={node.metadata?.subjectPanelGroupId === group.id && node.metadata?.subjectPanelItemId === item.id} onEditingChange={setEditingId} onChange={updateItem} onGenerate={() => openGenerationPanel(group.id, item.id)} onOpenMediaEditor={onOpenMediaEditor} />
-                                ))}
-                            </div>
-                        ) : (
-                            <EmptyBoardSection theme={theme} text={`暂无${group.title}`} />
-                        )}
-                    </section>
-                ))}
+                    </div>
+                    {activeGroup.items.length ? (
+                        <div className={fullscreen ? "grid grid-cols-[repeat(auto-fill,minmax(360px,1fr))] gap-4" : "grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3"}>
+                            {activeGroup.items.map((item) => (
+                                <SubjectCard key={item.id} nodeId={node.id} groupId={activeGroup.id} item={item} theme={theme} editing={editingId === item.id} fullscreen={fullscreen} active={node.metadata?.subjectPanelGroupId === activeGroup.id && node.metadata?.subjectPanelItemId === item.id} onEditingChange={setEditingId} onChange={updateItem} onGenerate={() => openGenerationPanel(activeGroup.id, item.id)} onOpenMediaEditor={onOpenMediaEditor} />
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptySubjectState theme={theme} group={activeGroup} onAdd={() => addItem(activeGroup)} />
+                    )}
+                </section>
             </div>
         </BoardShell>
     );
@@ -156,20 +186,29 @@ export function StoryboardNodeContent({ node, theme, onMetadataChange, onOpenMed
         updateBoard({ shots: board.shots.map((shot) => (shot.id === shotId ? { ...shot, ...patch } : shot)) });
     };
     const addShot = () => {
-        const id = String(board.shots.length + 1);
+        const id = nextStoryboardShotId(board.shots);
         updateBoard({
             shots: [
                 ...board.shots,
-                {
-                    id,
-                    description: "",
-                    references: [],
-                    image: { status: "empty" },
-                    video: { status: "empty" },
-                },
+                createStoryboardShot(id),
             ],
         });
         setEditingId(id);
+    };
+    const insertShotAfter = (shotId: string) => {
+        const id = nextStoryboardShotId(board.shots);
+        const index = board.shots.findIndex((shot) => shot.id === shotId);
+        const nextShots = [...board.shots];
+        nextShots.splice(index + 1, 0, createStoryboardShot(id));
+        updateBoard({ shots: nextShots });
+        setEditingId(id);
+    };
+    const deleteShot = (shotId: string) => {
+        if (!window.confirm("确定删除这一条分镜吗？")) return;
+        const nextStoryboard = { shots: board.shots.filter((shot) => shot.id !== shotId) };
+        if (node.metadata?.storyboardPanelShotId === shotId) onMetadataChange?.(node.id, { storyboard: nextStoryboard, storyboardPanelMode: undefined, storyboardPanelShotId: undefined, status: "success" });
+        else updateBoard(nextStoryboard);
+        setEditingId((current) => (current === shotId ? null : current));
     };
     const openGenerationPanel = (mode: CanvasStoryboardGenerationMode, shotId: string) => {
         const samePanel = node.metadata?.storyboardPanelMode === mode && node.metadata?.storyboardPanelShotId === shotId;
@@ -192,21 +231,25 @@ export function StoryboardNodeContent({ node, theme, onMetadataChange, onOpenMed
                         <span>视频提示词</span>
                         <span>视频</span>
                     </div>
-                    <div className="space-y-3">
-                        {board.shots.map((shot) => (
-                            <StoryboardRow
-                                key={shot.id}
-                                shot={shot}
-                                theme={theme}
-                                activePanelMode={node.metadata?.storyboardPanelShotId === shot.id ? node.metadata?.storyboardPanelMode : undefined}
-                                editing={editingId === shot.id}
-                                fullscreen={fullscreen}
-                                subjectReferences={subjectReferences}
-                                onEditingChange={setEditingId}
-                                onChange={updateShot}
-                                onOpenPanel={openGenerationPanel}
-                                onOpenMediaEditor={(kind) => onOpenMediaEditor?.({ boardType: "storyboard", nodeId: node.id, shotId: shot.id, kind })}
-                            />
+                    <div>
+                        {board.shots.map((shot, index) => (
+                            <Fragment key={shot.id}>
+                                <StoryboardRow
+                                    shot={shot}
+                                    displayIndex={index + 1}
+                                    theme={theme}
+                                    activePanelMode={node.metadata?.storyboardPanelShotId === shot.id ? node.metadata?.storyboardPanelMode : undefined}
+                                    editing={editingId === shot.id}
+                                    fullscreen={fullscreen}
+                                    subjectReferences={subjectReferences}
+                                    onEditingChange={setEditingId}
+                                    onChange={updateShot}
+                                    onDelete={deleteShot}
+                                    onOpenPanel={openGenerationPanel}
+                                    onOpenMediaEditor={(kind) => onOpenMediaEditor?.({ boardType: "storyboard", nodeId: node.id, shotId: shot.id, kind })}
+                                />
+                                {index < board.shots.length - 1 ? <InsertShotDivider theme={theme} onClick={() => insertShotAfter(shot.id)} /> : null}
+                            </Fragment>
                         ))}
                     </div>
                 </div>
@@ -221,7 +264,7 @@ export function StoryboardNodeContent({ node, theme, onMetadataChange, onOpenMed
     );
 }
 
-function StoryboardRow({ shot, theme, activePanelMode, editing, fullscreen, subjectReferences, onEditingChange, onChange, onOpenPanel, onOpenMediaEditor }: { shot: CanvasStoryboardShot; theme: Theme; activePanelMode?: CanvasStoryboardGenerationMode; editing: boolean; fullscreen?: boolean; subjectReferences: CanvasStoryboardReference[]; onEditingChange: (id: string | null) => void; onChange: (shotId: string, patch: Partial<CanvasStoryboardShot>) => void; onOpenPanel: (mode: CanvasStoryboardGenerationMode, shotId: string) => void; onOpenMediaEditor?: (kind: "image" | "video") => void }) {
+function StoryboardRow({ shot, displayIndex, theme, activePanelMode, editing, fullscreen, subjectReferences, onEditingChange, onChange, onDelete, onOpenPanel, onOpenMediaEditor }: { shot: CanvasStoryboardShot; displayIndex: number; theme: Theme; activePanelMode?: CanvasStoryboardGenerationMode; editing: boolean; fullscreen?: boolean; subjectReferences: CanvasStoryboardReference[]; onEditingChange: (id: string | null) => void; onChange: (shotId: string, patch: Partial<CanvasStoryboardShot>) => void; onDelete: (shotId: string) => void; onOpenPanel: (mode: CanvasStoryboardGenerationMode, shotId: string) => void; onOpenMediaEditor?: (kind: "image" | "video") => void }) {
     const rowStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text };
     const cellHeight = fullscreen ? "h-[304px]" : "h-24";
     const numberHeight = fullscreen ? "h-[304px]" : "h-28";
@@ -237,8 +280,13 @@ function StoryboardRow({ shot, theme, activePanelMode, editing, fullscreen, subj
     };
 
     return (
-        <article className="grid items-start gap-2 rounded-lg border p-2" style={{ ...rowStyle, gridTemplateColumns: fullscreen ? storyboardFullscreenGridColumns : storyboardGridColumns }}>
-            <div className={`flex ${numberHeight} items-start justify-center pt-2 text-sm font-semibold`}>{shot.id}</div>
+        <article className="relative grid items-start gap-2 rounded-lg border p-2 pr-11" style={{ ...rowStyle, gridTemplateColumns: fullscreen ? storyboardFullscreenGridColumns : storyboardGridColumns }}>
+            <button type="button" className="absolute right-2 top-1/2 grid size-7 -translate-y-1/2 cursor-pointer place-items-center rounded-md border transition hover:scale-[1.03]" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }} title="删除分镜" aria-label="删除分镜" onClick={() => onDelete(shot.id)} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                <Trash2 className="size-3.5" />
+            </button>
+            <div className={`flex ${numberHeight} items-start justify-center pt-2 text-sm font-semibold`}>
+                <span>{displayIndex}</span>
+            </div>
             <div className="flex min-w-0 flex-col items-start gap-2">
                 {editing ? (
                     <textarea
@@ -315,6 +363,17 @@ function StoryboardRow({ shot, theme, activePanelMode, editing, fullscreen, subj
             <PromptTextCell theme={theme} fullscreen={fullscreen} placeholder="用于生成这一镜视频的提示词" value={shot.videoPrompt || ""} onChange={(videoPrompt) => onChange(shot.id, { videoPrompt })} />
             <MediaSlotView theme={theme} fullscreen={fullscreen} slot={shot.video} kind="video" active={activePanelMode === "video"} onOpenPanel={() => onOpenPanel("video", shot.id)} onOpenEditor={() => onOpenMediaEditor?.("video")} onUpload={(url) => onChange(shot.id, { video: { status: "done", url }, videoHistory: [...(shot.videoHistory || []), { status: "done", url }] })} />
         </article>
+    );
+}
+
+function InsertShotDivider({ theme, onClick }: { theme: Theme; onClick: () => void }) {
+    return (
+        <div className="relative flex h-7 items-center justify-center">
+            <div className="absolute inset-x-4 top-1/2 h-px -translate-y-1/2 opacity-70" style={{ background: theme.node.stroke }} />
+            <button type="button" className="relative z-10 grid size-7 cursor-pointer place-items-center rounded-full border shadow-sm transition hover:scale-[1.06]" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke, color: theme.node.text }} title="在这里插入分镜" aria-label="在这里插入分镜" onClick={onClick} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                <Plus className="size-3.5" />
+            </button>
+        </div>
     );
 }
 
@@ -395,6 +454,23 @@ function EmptyBoardSection({ theme, text }: { theme: Theme; text: string }) {
     );
 }
 
+function EmptySubjectState({ theme, group, onAdd }: { theme: Theme; group: CanvasSubjectBoardGroup; onAdd: () => void }) {
+    return (
+        <div className="flex min-h-[150px] flex-col items-center justify-center rounded-xl border border-dashed px-5 py-6 text-center" style={{ borderColor: theme.node.stroke, background: theme.node.fill, color: theme.node.muted }}>
+            <div className="mb-3 grid size-10 place-items-center rounded-full" style={{ background: theme.toolbar.panel, color: theme.node.text }}>
+                <Plus className="size-5" />
+            </div>
+            <div className="text-sm font-semibold" style={{ color: theme.node.text }}>
+                暂无{group.title}
+            </div>
+            <div className="mt-1 max-w-[260px] text-[11px] leading-5">添加{group.title}后，可作为分镜、生成和主体参考使用。</div>
+            <div className="mt-4">
+                <BoardActionButton theme={theme} label={`添加${group.title}`} icon={<Plus className="size-3.5" />} onClick={onAdd} />
+            </div>
+        </div>
+    );
+}
+
 function SubjectPlaceholder({ theme, label }: { theme: Theme; label: string }) {
     return (
         <div className="flex h-full w-full items-center justify-center text-xs" style={{ color: theme.node.placeholder }}>
@@ -450,6 +526,27 @@ function normalizeSubjectBoard(board?: CanvasSubjectBoard): CanvasSubjectBoard {
               { id: "props", title: "道具", kind: "prop" as const, items: [] },
           ];
     return { groups };
+}
+
+function createStoryboardShot(id: string): CanvasStoryboardShot {
+    return {
+        id,
+        description: "",
+        references: [],
+        image: { status: "empty" },
+        video: { status: "empty" },
+    };
+}
+
+function nextStoryboardShotId(shots: CanvasStoryboardShot[]) {
+    const usedIds = new Set(shots.map((shot) => shot.id));
+    const maxNumber = shots.reduce((max, shot) => {
+        const value = Number(shot.id);
+        return Number.isFinite(value) ? Math.max(max, value) : max;
+    }, 0);
+    let next = Math.max(maxNumber + 1, shots.length + 1);
+    while (usedIds.has(String(next))) next += 1;
+    return String(next);
 }
 
 function normalizeStoryboard(board?: CanvasStoryboard): CanvasStoryboard {

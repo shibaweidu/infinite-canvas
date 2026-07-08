@@ -12,6 +12,7 @@ import { StoryboardNodeContent, SubjectBoardNodeContent } from "./canvas-creativ
 import { ProjectBriefNodeContent } from "./canvas-project-brief-node";
 import { VIDEO_REF_MODES } from "./canvas-node-generation";
 import { CanvasNodeType, type CanvasBoardMediaEditorTarget, type CanvasNodeData, type CanvasNodeMetadata, type CanvasStoryboardReference, type CanvasTextMode, type Position } from "../types";
+import { sanitizeCanvasRichTextHtml } from "../utils/canvas-rich-text";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -584,17 +585,19 @@ function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "
 }
 
 function TextContent({ node, theme, isEditingContent, textareaRef, mentionReferences, onContentChange, onStopEditing, onTextModeSelect, onToggleTextExpanded }: NodeContentRendererProps) {
-    const content = node.metadata?.content || "";
+    const rawContent = node.metadata?.content || "";
     const isLoading = node.metadata?.status === "loading";
-    const hasContent = Boolean(content.trim());
+    const hasContent = Boolean(rawContent.trim());
     const isExpanded = Boolean(node.metadata?.textExpanded);
     const textMode = node.metadata?.textMode;
     const isScriptText = node.metadata?.textRole === "script";
+    const contentHtml = hasContent && node.metadata?.contentHtml ? sanitizeCanvasRichTextHtml(node.metadata.contentHtml) : "";
+    const content = contentHtml && !isEditingContent ? "\u200B" : rawContent;
     const textSurfaceStyle: React.CSSProperties = {
         fontSize: `${node.metadata?.fontSize || 14}px`,
         color: theme.node.text,
-        fontWeight: node.metadata?.textBold || node.metadata?.textStyle === "h1" || node.metadata?.textStyle === "h2" ? 700 : 400,
-        fontStyle: node.metadata?.textItalic ? "italic" : "normal",
+        fontWeight: contentHtml ? 400 : (node.metadata?.textBold || node.metadata?.textStyle === "h1" || node.metadata?.textStyle === "h2" ? 700 : 400),
+        fontStyle: contentHtml ? "normal" : (node.metadata?.textItalic ? "italic" : "normal"),
         background: node.metadata?.textBackground || "transparent",
     };
 
@@ -640,10 +643,11 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                 <>
                     {hasContent || isLoading ? (
                         <div
-                            className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words rounded-[18px] bg-transparent pb-4 pl-4 pr-20 pt-0 font-mono leading-relaxed"
+                            className="thin-scrollbar block h-full w-full overflow-y-auto whitespace-pre-wrap break-words rounded-[18px] bg-transparent pb-4 pl-4 pr-20 pt-0 font-mono leading-relaxed [&_b]:font-bold [&_em]:italic [&_h1]:my-1.5 [&_h1]:text-[1.65em] [&_h1]:font-bold [&_h2]:my-1.5 [&_h2]:text-[1.35em] [&_h2]:font-bold [&_h3]:my-1 [&_h3]:text-[1.15em] [&_h3]:font-semibold [&_i]:italic [&_li]:my-1 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_strong]:font-bold [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5"
                             style={textSurfaceStyle}
                             onWheel={(event) => event.stopPropagation()}
                         >
+                            {contentHtml ? <div className="contents" dangerouslySetInnerHTML={{ __html: contentHtml }} /> : null}
                             {content || <span style={{ color: theme.node.placeholder }}>正在等待模型输出...</span>}
                         </div>
                     ) : textMode === "write" && isScriptText && !hasContent ? (
