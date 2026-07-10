@@ -35,6 +35,34 @@ export type CanvasSubjectKind = "character" | "scene" | "prop";
 export type CanvasMediaSlotStatus = "empty" | "generating" | "done" | "error";
 export type CanvasStoryboardGenerationMode = "image" | "video";
 
+export type CanvasGlobalSettings = {
+    agents?: {
+        scriptInstruction?: string;
+        characterInstruction?: string;
+        storyboardInstruction?: string;
+    };
+    styleName?: string;
+    image?: {
+        model?: string;
+        quality?: string;
+        size?: string;
+    };
+    video?: {
+        model?: string;
+        vquality?: string;
+        size?: string;
+        videoSeconds?: string;
+    };
+};
+
+export type CanvasShortDramaWorkflow = {
+    id: string;
+    title: string;
+    color: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 export type CanvasProjectBrief = {
     theme: string;
     genre: string;
@@ -189,6 +217,7 @@ export type CanvasNodeMetadata = {
     storyboardResultKind?: CanvasStoryboardGenerationMode;
     storyboardImageModel?: string;
     storyboardVideoModel?: string;
+    workflowId?: string;
 };
 
 export type CanvasNodeData = {
@@ -211,6 +240,8 @@ export type CanvasGroup = {
     color?: string;
     collapsed?: boolean;
     locked?: boolean;
+    workflowId?: string;
+    groupType?: "shortDramaWorkflow";
 };
 
 export type CanvasArrangeMode = "grid" | "horizontal" | "vertical";

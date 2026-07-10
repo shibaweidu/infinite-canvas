@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Bot, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Music2, Play, Type, Video } from "lucide-react";
 import { Button, Input, Segmented } from "antd";
 
@@ -12,7 +12,8 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasFullscreenTextEditor } from "./canvas-fullscreen-text-editor";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import type { NodeGenerationInput } from "./canvas-node-generation";
-import type { CanvasAgentOutputFormat, CanvasNodeData, CanvasNodeMetadata } from "../types";
+import { buildCanvasScopedConfig, resolveAgentInstruction, resolveCanvasAgentDefaults } from "../utils/canvas-global-settings";
+import type { CanvasAgentOutputFormat, CanvasGlobalSettings, CanvasNodeData, CanvasNodeMetadata } from "../types";
 
 type CanvasAgentNodePanelProps = {
     node: CanvasNodeData;
@@ -21,6 +22,7 @@ type CanvasAgentNodePanelProps = {
     inputs: NodeGenerationInput[];
     onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onRun: (nodeId: string, prompt: string) => void;
+    canvasGlobalSettings?: CanvasGlobalSettings;
 };
 
 const outputFormatOptions: { value: CanvasAgentOutputFormat; label: string }[] = [
@@ -30,12 +32,14 @@ const outputFormatOptions: { value: CanvasAgentOutputFormat; label: string }[] =
     { value: "promptList", label: "提示词组" },
 ];
 
-export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, onConfigChange, onRun }: CanvasAgentNodePanelProps) {
+export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, onConfigChange, onRun, canvasGlobalSettings }: CanvasAgentNodePanelProps) {
     const globalConfig = useEffectiveConfig();
-    const modelCosts = useConfigStore((state) => state.publicSettings?.modelChannel.modelCosts);
+    const publicModelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
+    const modelCosts = publicModelChannel?.modelCosts;
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const config = buildAgentConfig(globalConfig, node);
+    const config = buildAgentConfig(globalConfig, canvasGlobalSettings, node);
+    const systemAgentInstructions = useMemo(() => resolveCanvasAgentDefaults(publicModelChannel), [publicModelChannel]);
     const [prompt, setPrompt] = useState(node.metadata?.prompt || "");
     const [instructionEditorOpen, setInstructionEditorOpen] = useState(false);
     const [promptExpanded, setPromptExpanded] = useState(false);
@@ -44,7 +48,8 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
     const imageInputs = inputs.filter((input) => input.image);
     const textInputs = inputs.filter((input) => input.type === "text");
     const otherInputs = inputs.filter((input) => input.type !== "text" && !input.image);
-    const canRun = Boolean(prompt.trim() || node.metadata?.agentInstruction?.trim() || inputs.length);
+    const resolvedInstruction = resolveAgentInstruction(node.type, node.metadata?.agentInstruction, canvasGlobalSettings, systemAgentInstructions);
+    const canRun = Boolean(prompt.trim() || resolvedInstruction.trim() || inputs.length);
 
     useEffect(() => {
         setPrompt(node.metadata?.prompt || "");
@@ -69,7 +74,7 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
             <div className="relative mb-2">
                 <Input.TextArea
                     className="thin-scrollbar !h-20 !resize-none !rounded-xl !pr-10 !text-sm !leading-5"
-                    value={node.metadata?.agentInstruction || ""}
+                    value={resolvedInstruction}
                     placeholder="输入智能体身份、能力边界和输出要求"
                     onChange={(event) => onConfigChange(node.id, { agentInstruction: event.target.value })}
                 />
@@ -133,7 +138,7 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
                     </span>
                 </Button>
             </div>
-            <CanvasFullscreenTextEditor open={instructionEditorOpen} title="智能体身份设定" value={node.metadata?.agentInstruction || ""} placeholder="输入智能体身份、能力边界和输出要求" theme={theme} onChange={(agentInstruction) => onConfigChange(node.id, { agentInstruction })} onClose={() => setInstructionEditorOpen(false)} />
+            <CanvasFullscreenTextEditor open={instructionEditorOpen} title="智能体身份设定" value={resolvedInstruction} placeholder="输入智能体身份、能力边界和输出要求" theme={theme} onChange={(agentInstruction) => onConfigChange(node.id, { agentInstruction })} onClose={() => setInstructionEditorOpen(false)} />
         </div>
     );
 }
@@ -181,9 +186,10 @@ function FullscreenTextButton({ theme, label, onClick }: { theme: (typeof canvas
     );
 }
 
-function buildAgentConfig(globalConfig: AiConfig, node: CanvasNodeData): AiConfig {
+function buildAgentConfig(globalConfig: AiConfig, canvasGlobalSettings: CanvasGlobalSettings | undefined, node: CanvasNodeData): AiConfig {
+    const scopedConfig = buildCanvasScopedConfig(globalConfig, canvasGlobalSettings, "text");
     return {
-        ...globalConfig,
-        model: node.metadata?.model || globalConfig.textModel || globalConfig.model || defaultConfig.model,
+        ...scopedConfig,
+        model: node.metadata?.model || scopedConfig.textModel || scopedConfig.model || defaultConfig.model,
     };
 }

@@ -4,13 +4,16 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { defaultModelApiRoutes, normalizeModelApiRoutes } from "@/lib/model-api-routes";
 import { apiGet } from "@/services/api/request";
-import type { AdminModelType, AdminPublicSettings } from "@/services/api/admin";
+import type { AdminModelApiRoute, AdminModelType, AdminPublicSettings } from "@/services/api/admin";
 
 export type AiConfig = {
     channelMode: "remote" | "local";
     baseUrl: string;
     apiKey: string;
+    localProviderId: string;
+    localProviders: LocalModelProvider[];
     model: string;
     imageModel: string;
     videoModel: string;
@@ -39,11 +42,40 @@ export type AiConfig = {
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
+export type LocalModelProvider = {
+    id: string;
+    name: string;
+    protocol: "openai";
+    baseUrl: string;
+    apiKey: string;
+    enabled: boolean;
+    models: LocalProviderModel[];
+};
+
+export type LocalProviderModel = {
+    model: string;
+    name: string;
+    type: ModelCapability;
+    enabled: boolean;
+    source: "fetched" | "manual";
+    apiRoutes: AdminModelApiRoute[];
+};
+
+export type LocalModelOption = {
+    value: string;
+    model: string;
+    name: string;
+    providerId: string;
+    providerName: string;
+    type: ModelCapability;
+};
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
     baseUrl: "https://api.openai.com",
     apiKey: "",
+    localProviderId: "",
+    localProviders: [],
     model: "",
     imageModel: "",
     videoModel: "",
@@ -88,10 +120,13 @@ type ConfigStore = {
 
 function resolveEffectiveConfig(config: AiConfig, modelChannel: AdminPublicSettings["modelChannel"] | null) {
     const channelMode = modelChannel?.allowCustomChannel ? config.channelMode : "remote";
-    if (channelMode === "local" || !modelChannel) return { ...config, channelMode };
+    if (channelMode === "local" || !modelChannel) return { ...resolveActiveLocalProviderConfig(config), channelMode };
     const models = modelChannel.availableModels || [];
-    const modelTypes = new Map((modelChannel.modelCosts || []).map((item) => [item.model, item.type]));
-    const modelAliases = new Map((modelChannel.modelCosts || []).map((item) => [item.upstreamModel, item.model]).filter(([upstream]) => upstream));
+    const modelTypes = new Map<string, AdminModelType>((modelChannel.modelCosts || []).map((item) => [item.model, item.type] as const));
+    const modelAliases = new Map<string, string>(
+        (modelChannel.modelCosts || [])
+            .flatMap((item) => (item.upstreamModel ? [[item.upstreamModel, item.model] as const] : [])),
+    );
     const textModels = filterModelsByCapability(models, "text", modelTypes);
     const imageModels = filterModelsByCapability(models, "image", modelTypes);
     const videoModels = filterModelsByCapability(models, "video", modelTypes);
@@ -154,6 +189,13 @@ function isTextModelName(model: string) {
     return !isImageModelName(model) && !isVideoModelName(model) && !isAudioModelName(model);
 }
 
+export function inferLocalModelType(model: string): ModelCapability {
+    if (isImageModelName(model)) return "image";
+    if (isVideoModelName(model)) return "video";
+    if (isAudioModelName(model)) return "audio";
+    return "text";
+}
+
 export function modelMatchesCapability(model: string, capability?: ModelCapability) {
     if (!capability) return true;
     if (capability === "image") return isImageModelName(model);
@@ -172,8 +214,42 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
 }
 
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
+    if (config.channelMode === "local" && config.localProviders.length) return selectableLocalModelOptions(config, capability).map((item) => item.value);
     if (!capability) return config.models;
     return config[modelListKey(capability)];
+}
+
+export function selectableLocalModelOptions(config: AiConfig, capability?: ModelCapability): LocalModelOption[] {
+    const providers = normalizedLocalProviders(config);
+    if (!providers.length) {
+        return selectableLegacyLocalModels(config, capability).map((model) => ({
+            value: model,
+            model,
+            name: model,
+            providerId: "",
+            providerName: "本地直连",
+            type: inferLocalModelType(model),
+        }));
+    }
+    const options = providers
+        .filter((provider) => provider.enabled !== false)
+        .flatMap((provider, providerIndex) =>
+            provider.models.filter((model) => model.enabled && model.apiRoutes.some((route) => route.enabled)).map((model) => ({
+                value: localModelOptionValue(provider.id, model.model),
+                model: model.model,
+                name: model.name || model.model,
+                providerId: provider.id,
+                providerName: localProviderPublicName(provider.name, providerIndex),
+                type: model.type,
+            })),
+        );
+    if (!capability) return options;
+    return options.filter((item) => item.type === capability);
+}
+
+function localProviderPublicName(name: string, index: number) {
+    const value = name.trim();
+    return !value || /^https?:\/\//i.test(value) ? `本地供应商 ${index + 1}` : value;
 }
 
 export function modelOptionName(value: string) {
@@ -195,11 +271,60 @@ export function normalizeModelOptionValue(value?: string) {
     return (value || "").trim();
 }
 
+export function localModelOptionValue(providerId: string, model: string) {
+    return `local:${providerId}||${model.trim()}`;
+}
+
+export function parseLocalModelOptionValue(value?: string) {
+    const text = (value || "").trim();
+    const match = text.match(/^local:([^|]+)\|\|(.+)$/);
+    return match ? { providerId: match[1], model: match[2].trim() } : { providerId: "", model: modelOptionName(text) };
+}
+
+export function resolveLocalModelConfig(config: AiConfig, selectedModel?: string): AiConfig {
+    if (config.channelMode !== "local") return config;
+    const providers = normalizedLocalProviders(config);
+    if (!providers.length) return config;
+    const parsed = parseLocalModelOptionValue(selectedModel || config.model || config.imageModel || config.videoModel || config.textModel || config.audioModel);
+    const provider = providers.find((item) => item.id === parsed.providerId) || providers.find((item) => item.id === config.localProviderId) || providers[0];
+    const model = provider.models.find((item) => item.model === parsed.model)?.model || parsed.model;
+    return {
+        ...config,
+        localProviderId: provider.id,
+        baseUrl: provider.baseUrl,
+        apiKey: provider.apiKey,
+        model: model || parseLocalModelOptionValue(config.model).model || config.model,
+        imageModel: parseLocalModelOptionValue(config.imageModel).model || config.imageModel,
+        videoModel: parseLocalModelOptionValue(config.videoModel).model || config.videoModel,
+        textModel: parseLocalModelOptionValue(config.textModel).model || config.textModel,
+        audioModel: parseLocalModelOptionValue(config.audioModel).model || config.audioModel,
+    };
+}
+
+export function resolveLocalProviderModel(config: AiConfig, selectedModel?: string) {
+    if (config.channelMode !== "local") return null;
+    const parsed = parseLocalModelOptionValue(selectedModel || config.model || config.imageModel || config.videoModel || config.textModel || config.audioModel);
+    const providers = normalizedLocalProviders(config);
+    const provider = providers.find((item) => item.id === parsed.providerId) || providers.find((item) => item.id === config.localProviderId) || providers[0];
+    if (!provider) return null;
+    const model = provider.models.find((item) => item.model === parsed.model);
+    return model ? { provider, model } : null;
+}
+
+export function resolveLocalModelApiRoute(config: AiConfig, selectedModel: string | undefined, allowedPaths: string[], fallbackPath: string) {
+    if (config.channelMode !== "local") return fallbackPath;
+    const resolved = resolveLocalProviderModel(config, selectedModel);
+    if (!resolved) return fallbackPath;
+    return allowedPaths.find((path) => resolved.model.apiRoutes.some((route) => route.path === path && route.enabled)) || fallbackPath;
+}
+
 export function resolveModelChannel(config: AiConfig, value: string) {
+    const parsedLocal = config.channelMode === "local" ? parseLocalModelOptionValue(value) : null;
+    const provider = parsedLocal?.providerId ? normalizedLocalProviders(config).find((item) => item.id === parsedLocal.providerId) : null;
     return {
         id: config.channelMode,
-        name: config.channelMode === "remote" ? "云端" : "本地直连",
-        model: modelOptionName(value),
+        name: config.channelMode === "remote" ? "云端" : provider?.name || "本地直连",
+        model: parsedLocal?.model || modelOptionName(value),
     };
 }
 
@@ -208,7 +333,10 @@ function modelListKey(capability: ModelCapability) {
 }
 
 function isAiConfigReady(config: AiConfig, model: string) {
-    return Boolean(model.trim()) && (config.channelMode === "remote" || Boolean(config.baseUrl.trim() && config.apiKey.trim()));
+    if (!model.trim()) return false;
+    if (config.channelMode === "remote") return true;
+    const resolved = resolveLocalProviderModel(config, model);
+    return resolved ? resolved.provider.enabled && resolved.model.enabled && resolved.model.apiRoutes.some((route) => route.enabled) && Boolean(resolved.provider.baseUrl.trim()) : Boolean(resolveLocalModelConfig(config, model).baseUrl.trim());
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -246,6 +374,7 @@ export const useConfigStore = create<ConfigStore>()(
             merge: (persisted, current) => {
                 const persistedConfig = ((persisted as Partial<ConfigStore>).config || {}) as Partial<AiConfig>;
                 const config = { ...defaultConfig, ...persistedConfig };
+                const localProviders = normalizeLocalProviders(config.localProviders?.length ? config.localProviders : legacyLocalProviders(config));
                 const imageModels = Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels) : filterModelsByCapability(config.models, "image");
                 const videoModels = Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels) : filterModelsByCapability(config.models, "video");
                 const textModels = Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels) : filterModelsByCapability(config.models, "text");
@@ -254,6 +383,8 @@ export const useConfigStore = create<ConfigStore>()(
                     ...current,
                     config: {
                         ...config,
+                        localProviders,
+                        localProviderId: config.localProviderId || localProviders[0]?.id || "",
                         channelMode: config.channelMode || "remote",
                         model: clearLegacyBuiltInLocalModel(config.model, config.models),
                         imageModel: clearLegacyBuiltInLocalModel(config.imageModel || config.model, imageModels.length ? imageModels : config.models),
@@ -286,6 +417,85 @@ function normalizeModelList(models: string[]) {
     return Array.from(new Set((models || []).map((model) => model.trim()).filter(Boolean)));
 }
 
+export function createLocalProviderModel(model: string, enabled = false, source: LocalProviderModel["source"] = "fetched"): LocalProviderModel {
+    const id = model.trim();
+    const type = inferLocalModelType(id);
+    return { model: id, name: id, type, enabled, source, apiRoutes: defaultModelApiRoutes(type) };
+}
+
+export function normalizeLocalProviderModels(models?: Array<Partial<LocalProviderModel>>) {
+    const seen = new Set<string>();
+    return (models || [])
+        .map((item) => {
+            const model = item.model?.trim() || "";
+            const type = item.type || inferLocalModelType(model);
+            return {
+                model,
+                name: item.name?.trim() || model,
+                type,
+                enabled: item.enabled === true,
+                source: item.source === "manual" ? "manual" : "fetched",
+                apiRoutes: normalizeModelApiRoutes(type, item.apiRoutes),
+            };
+        })
+        .filter((item) => {
+            if (!item.model || seen.has(item.model)) return false;
+            seen.add(item.model);
+            return true;
+        });
+}
+
+export function localProviderModelIds(models: LocalProviderModel[], enabledOnly = false) {
+    return models.filter((model) => !enabledOnly || model.enabled).map((model) => model.model);
+}
+
+export function normalizeLocalProviders(providers?: Partial<LocalModelProvider>[]) {
+    return (providers || [])
+        .map((provider, index) => ({
+            id: provider.id?.trim() || `local-provider-${index + 1}`,
+            name: provider.name?.trim() || `本地供应商 ${index + 1}`,
+            protocol: "openai" as const,
+            baseUrl: provider.baseUrl?.trim() || "",
+            apiKey: provider.apiKey || "",
+            enabled: provider.enabled !== false,
+            models: normalizeLocalProviderModels(provider.models),
+        }))
+        .filter((provider) => provider.baseUrl || provider.models.length || provider.name);
+}
+
+function normalizedLocalProviders(config: AiConfig) {
+    return normalizeLocalProviders(config.localProviders);
+}
+
+function legacyLocalProviders(config: Partial<AiConfig>): LocalModelProvider[] {
+    const baseUrl = config.baseUrl?.trim() || "";
+    const apiKey = config.apiKey || "";
+    const models = normalizeModelList([...(config.models || []), ...(config.imageModels || []), ...(config.videoModels || []), ...(config.textModels || []), ...(config.audioModels || [])]).map((model) => createLocalProviderModel(model, true));
+    if (!baseUrl && !models.length) return [];
+    return [
+        {
+            id: "legacy-local",
+            name: "本地直连",
+            protocol: "openai",
+            baseUrl,
+            apiKey,
+            enabled: true,
+            models,
+        },
+    ];
+}
+
+function resolveActiveLocalProviderConfig(config: AiConfig) {
+    const providers = normalizedLocalProviders(config);
+    const provider = providers.find((item) => item.id === config.localProviderId) || providers[0];
+    return provider ? { ...config, localProviderId: provider.id, baseUrl: provider.baseUrl, apiKey: provider.apiKey } : config;
+}
+
+function selectableLegacyLocalModels(config: AiConfig, capability?: ModelCapability) {
+    if (capability) return config[modelListKey(capability)];
+    return normalizeModelList([...config.imageModels, ...config.videoModels, ...config.textModels, ...config.audioModels, ...config.models]);
+}
+
 function clearLegacyBuiltInLocalModel(model: string, availableModels: string[]) {
     const value = model.trim();
     if (!legacyBuiltInLocalModels.has(value)) return value;
@@ -301,9 +511,13 @@ export function useEffectiveConfig() {
 export function buildApiUrl(baseUrl: string, path: string) {
     let normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     normalizedBaseUrl = normalizeArkPlanBaseUrl(normalizedBaseUrl);
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
+    if (normalizedPath.startsWith("/v1/")) {
+        return lowerBaseUrl.endsWith("/v1") ? `${normalizedBaseUrl}${normalizedPath.slice(3)}` : `${normalizedBaseUrl}${normalizedPath}`;
+    }
     const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") || lowerBaseUrl.endsWith("/api/plan/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
-    return `${apiBaseUrl}${path}`;
+    return `${apiBaseUrl}${normalizedPath}`;
 }
 
 function normalizeArkPlanBaseUrl(baseUrl: string) {

@@ -768,6 +768,9 @@ export type AdminPublicModelChannelSettings = {
     defaultVideoModel: string;
     defaultTextModel: string;
     systemPrompt: string;
+    scriptAgentInstruction: string;
+    characterAgentInstruction: string;
+    storyboardAgentInstruction: string;
     allowCustomChannel: boolean;
 };
 

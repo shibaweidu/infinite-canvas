@@ -4,7 +4,7 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import type { CanvasAssistantSession, CanvasConnection, CanvasGroup, CanvasNodeData, ViewportTransform } from "../types";
+import type { CanvasAssistantSession, CanvasConnection, CanvasGlobalSettings, CanvasGroup, CanvasNodeData, CanvasShortDramaWorkflow, ViewportTransform } from "../types";
 
 export type CanvasProject = {
     id: string;
@@ -19,6 +19,9 @@ export type CanvasProject = {
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
     viewport: ViewportTransform;
+    globalSettings?: CanvasGlobalSettings;
+    shortDramaWorkflows?: CanvasShortDramaWorkflow[];
+    activeWorkflowId?: string | null;
 };
 
 type CanvasStore = {
@@ -29,7 +32,7 @@ type CanvasStore = {
     openProject: (id: string) => CanvasProject | null;
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "groups" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "groups" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport" | "globalSettings" | "shortDramaWorkflows" | "activeWorkflowId">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
@@ -80,6 +83,9 @@ export const useCanvasStore = create<CanvasStore>()(
                     backgroundMode: "lines",
                     showImageInfo: false,
                     viewport: initialViewport,
+                    globalSettings: undefined,
+                    shortDramaWorkflows: [],
+                    activeWorkflowId: null,
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return id;
@@ -99,6 +105,9 @@ export const useCanvasStore = create<CanvasStore>()(
                     backgroundMode: source.backgroundMode || "lines",
                     showImageInfo: source.showImageInfo || false,
                     viewport: source.viewport || initialViewport,
+                    globalSettings: source.globalSettings,
+                    shortDramaWorkflows: source.shortDramaWorkflows || [],
+                    activeWorkflowId: source.activeWorkflowId || null,
                 };
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return project.id;

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ChevronDown, Circle, Download, Grid2x2, List, Menu, Play, Ungroup } from "lucide-react";
+import { ChevronDown, Circle, Download, Grid2x2, List, Maximize2, Menu, Minimize2, Play, Trash2, Ungroup } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { CanvasArrangeMode, CanvasGroup } from "../types";
+import type { CanvasArrangeMode, CanvasGroup, CanvasNodeData } from "../types";
 
 type CanvasGroupBounds = {
     left: number;
@@ -26,6 +26,7 @@ export function CanvasGroupFrame({
     group,
     bounds,
     nodeCount,
+    nodes,
     scale,
     selected,
     onSelect,
@@ -35,12 +36,15 @@ export function CanvasGroupFrame({
     onArrange,
     onRun,
     onBatchDownload,
+    onToggleCollapsed,
     onUngroup,
+    onDelete,
     onResizeStart,
 }: {
     group: CanvasGroup;
     bounds: CanvasGroupBounds;
     nodeCount: number;
+    nodes: CanvasNodeData[];
     scale: number;
     selected: boolean;
     onSelect: () => void;
@@ -50,7 +54,9 @@ export function CanvasGroupFrame({
     onArrange: (mode: CanvasArrangeMode) => void;
     onRun: () => void;
     onBatchDownload: () => void;
+    onToggleCollapsed: () => void;
     onUngroup: () => void;
+    onDelete: () => void;
     onResizeStart: (event: ReactPointerEvent<HTMLElement>, corner: GroupResizeCorner) => void;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
@@ -59,14 +65,18 @@ export function CanvasGroupFrame({
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [arrangeOpen, setArrangeOpen] = useState(false);
     const color = group.color || groupColors[0];
+    const collapsed = Boolean(group.collapsed);
     const fixedScale = 1 / Math.max(scale, 0.05);
     const toolbarWorldHeight = toolbarHeight * fixedScale;
     const titleWorldOffset = 28 * fixedScale;
-    const outerTop = bounds.top - (selected ? toolbarWorldHeight + groupPadding + 18 : groupPadding + titleWorldOffset);
-    const frameTop = selected ? toolbarWorldHeight + 18 : titleWorldOffset;
-    const frameWidth = bounds.width + groupPadding * 2;
-    const frameHeight = bounds.height + groupPadding * 2;
-    const title = `${group.title || "分组"} ${nodeCount} 个节点`;
+    const framePadding = collapsed ? 0 : groupPadding;
+    const selectedToolbarGap = collapsed ? 14 : 18;
+    const idleTitleOffset = collapsed ? 0 : titleWorldOffset;
+    const outerTop = bounds.top - (selected ? toolbarWorldHeight + framePadding + selectedToolbarGap : framePadding + idleTitleOffset);
+    const frameTop = selected ? toolbarWorldHeight + selectedToolbarGap : idleTitleOffset;
+    const frameWidth = bounds.width + framePadding * 2;
+    const frameHeight = bounds.height + framePadding * 2;
+    const title = group.groupType === "shortDramaWorkflow" ? group.title || "短剧工作流" : group.title || "分组";
     const titleWidth = Math.max(112, Math.min(320, title.length * 12 + 28));
 
     useEffect(() => {
@@ -74,8 +84,8 @@ export function CanvasGroupFrame({
     }, [editing, group.title]);
 
     const commit = () => {
-        const title = draft.trim();
-        if (title && title !== group.title) onRename(title);
+        const nextTitle = draft.trim();
+        if (nextTitle && nextTitle !== group.title) onRename(nextTitle);
         setEditing(false);
     };
 
@@ -83,7 +93,7 @@ export function CanvasGroupFrame({
         <div
             className="pointer-events-none absolute z-[2]"
             style={{
-                left: bounds.left - groupPadding,
+                left: bounds.left - framePadding,
                 top: outerTop,
                 width: frameWidth,
                 height: frameTop + frameHeight,
@@ -100,21 +110,25 @@ export function CanvasGroupFrame({
                     onArrange={onArrange}
                     onRun={onRun}
                     onBatchDownload={onBatchDownload}
+                    onToggleCollapsed={onToggleCollapsed}
                     onUngroup={onUngroup}
+                    onDelete={onDelete}
+                    workflow={group.groupType === "shortDramaWorkflow"}
+                    collapsed={collapsed}
                     scale={fixedScale}
                 />
             ) : null}
 
             <div
-                className="pointer-events-auto absolute left-0 rounded-sm border"
+                className={`pointer-events-auto absolute left-0 border ${collapsed ? "rounded-[18px]" : "rounded-sm"}`}
                 style={{
                     top: frameTop,
                     width: frameWidth,
                     height: frameHeight,
                     borderColor: selected ? color : colorToRgba(color, 0.62),
                     borderStyle: selected ? "solid" : "dashed",
-                    background: colorToRgba(color, selected ? 0.12 : 0.08),
-                    boxShadow: selected ? `0 0 0 1px ${colorToRgba(color, 0.22)}` : undefined,
+                    background: collapsed ? theme.toolbar.panel : colorToRgba(color, selected ? 0.12 : 0.08),
+                    boxShadow: collapsed ? `0 18px 45px ${colorToRgba(color, selected ? 0.2 : 0.12)}` : selected ? `0 0 0 1px ${colorToRgba(color, 0.22)}` : undefined,
                     cursor: "move",
                 }}
                 onPointerDown={(event) => {
@@ -125,39 +139,172 @@ export function CanvasGroupFrame({
                     onDragStart(event);
                 }}
             >
-                {selected ? <GroupHandles color={color} onResizeStart={onResizeStart} /> : null}
+                {collapsed ? (
+                    <CollapsedGroupCard
+                        color={color}
+                        title={title}
+                        nodes={nodes}
+                        nodeCount={nodeCount}
+                        workflow={group.groupType === "shortDramaWorkflow"}
+                        editing={editing}
+                        draft={draft}
+                        onDraftChange={setDraft}
+                        onEdit={() => setEditing(true)}
+                        onCommit={commit}
+                        onCancelEdit={() => setEditing(false)}
+                        onToggleCollapsed={onToggleCollapsed}
+                    />
+                ) : null}
+                {selected && !collapsed ? <GroupHandles color={color} onResizeStart={onResizeStart} /> : null}
             </div>
 
-            <div
-                className="pointer-events-auto absolute left-0 flex h-6 cursor-grab items-center gap-1 text-xs font-medium active:cursor-grabbing"
-                style={{ top: frameTop - titleWorldOffset, width: titleWidth, color: theme.node.muted, transform: `scale(${fixedScale})`, transformOrigin: "left center" }}
-                onPointerDown={(event) => {
-                    if (editing) return;
-                    onSelect();
-                    onDragStart(event);
-                }}
-                onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    setEditing(true);
-                }}
-            >
-                {editing ? (
-                    <input
-                        autoFocus
-                        className="h-6 min-w-28 rounded border bg-transparent px-1 text-xs outline-none"
-                        style={{ borderColor: theme.node.stroke, color: theme.node.text, background: theme.toolbar.panel }}
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onBlur={commit}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter") commit();
-                            if (event.key === "Escape") setEditing(false);
-                        }}
-                    />
-                ) : (
-                    <span className="truncate">{title}</span>
-                )}
+            {!collapsed ? (
+                <div
+                    className="pointer-events-auto absolute left-0 flex h-6 cursor-grab items-center gap-1 text-xs font-medium active:cursor-grabbing"
+                    style={{ top: frameTop - titleWorldOffset, width: titleWidth, color: theme.node.muted, transform: `scale(${fixedScale})`, transformOrigin: "left center" }}
+                    onPointerDown={(event) => {
+                        if (editing) return;
+                        onSelect();
+                        onDragStart(event);
+                    }}
+                    onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        setEditing(true);
+                    }}
+                >
+                    {editing ? (
+                        <input
+                            autoFocus
+                            className="h-6 min-w-28 rounded border bg-transparent px-1 text-xs outline-none"
+                            style={{ borderColor: theme.node.stroke, color: theme.node.text, background: theme.toolbar.panel }}
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onBlur={commit}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") commit();
+                                if (event.key === "Escape") setEditing(false);
+                            }}
+                        />
+                    ) : (
+                        <span className="truncate">{title}</span>
+                    )}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function CollapsedGroupCard({
+    color,
+    title,
+    nodes,
+    nodeCount,
+    workflow,
+    editing,
+    draft,
+    onDraftChange,
+    onEdit,
+    onCommit,
+    onCancelEdit,
+    onToggleCollapsed,
+}: {
+    color: string;
+    title: string;
+    nodes: CanvasNodeData[];
+    nodeCount: number;
+    workflow: boolean;
+    editing: boolean;
+    draft: string;
+    onDraftChange: (value: string) => void;
+    onEdit: () => void;
+    onCommit: () => void;
+    onCancelEdit: () => void;
+    onToggleCollapsed: () => void;
+}) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const previewTitles = nodes.slice(0, 4).map((node) => node.title || "未命名节点");
+    const runningCount = nodes.filter((node) => node.metadata?.status === "loading").length;
+
+    return (
+        <div className="flex h-full flex-col justify-between rounded-[inherit] p-5" style={{ color: theme.node.text }}>
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2 text-[11px]" style={{ color: theme.node.muted }}>
+                        <span className="size-2 rounded-full" style={{ background: color }} />
+                        <span>{workflow ? "短剧工作流" : "画布分组"}</span>
+                    </div>
+                    {editing ? (
+                        <input
+                            autoFocus
+                            className="h-8 w-full rounded-lg border bg-transparent px-2 text-sm font-medium outline-none"
+                            style={{ borderColor: theme.node.stroke, color: theme.node.text, background: theme.toolbar.panel }}
+                            value={draft}
+                            onChange={(event) => onDraftChange(event.target.value)}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onBlur={onCommit}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") onCommit();
+                                if (event.key === "Escape") onCancelEdit();
+                            }}
+                        />
+                    ) : (
+                        <div
+                            className="truncate text-sm font-medium"
+                            title={title}
+                            onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                onEdit();
+                            }}
+                        >
+                            {title}
+                        </div>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    data-group-control
+                    className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg transition hover:scale-[1.03]"
+                    style={{ background: colorToRgba(color, 0.14), color: theme.node.text }}
+                    title="展开分组"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleCollapsed();
+                    }}
+                >
+                    <Maximize2 className="size-4" />
+                </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+                <GroupStat label="节点" value={nodeCount} color={color} />
+                <GroupStat label="运行中" value={runningCount} color={color} />
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+                {previewTitles.map((item, index) => (
+                    <span key={`${item}-${index}`} className="max-w-[132px] truncate rounded-md border px-2 py-1 text-[11px]" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
+                        {item}
+                    </span>
+                ))}
+                {nodeCount > previewTitles.length ? (
+                    <span className="rounded-md border px-2 py-1 text-[11px]" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
+                        +{nodeCount - previewTitles.length}
+                    </span>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
+function GroupStat({ label, value, color }: { label: string; value: number; color: string }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    return (
+        <div className="rounded-lg border px-3 py-2" style={{ borderColor: theme.node.stroke, background: colorToRgba(color, 0.08) }}>
+            <div className="text-lg font-semibold leading-none">{value}</div>
+            <div className="mt-1 text-[11px]" style={{ color: theme.node.muted }}>
+                {label}
             </div>
         </div>
     );
@@ -173,7 +320,11 @@ function GroupToolbar({
     onArrange,
     onRun,
     onBatchDownload,
+    onToggleCollapsed,
     onUngroup,
+    onDelete,
+    workflow,
+    collapsed,
     scale,
 }: {
     color: string;
@@ -185,14 +336,16 @@ function GroupToolbar({
     onArrange: (mode: CanvasArrangeMode) => void;
     onRun: () => void;
     onBatchDownload: () => void;
+    onToggleCollapsed: () => void;
     onUngroup: () => void;
+    onDelete: () => void;
+    workflow: boolean;
+    collapsed: boolean;
     scale: number;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     return (
-        <div
-            className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2"
-        >
+        <div className="pointer-events-none absolute left-1/2 top-0 z-20 -translate-x-1/2">
             <div
                 data-canvas-no-zoom
                 data-group-control
@@ -212,7 +365,7 @@ function GroupToolbar({
                                 <button
                                     key={item}
                                     type="button"
-                                    className="size-7 rounded-full border transition hover:scale-105"
+                                    className="size-7 cursor-pointer rounded-full border transition hover:scale-105"
                                     style={{ background: item, borderColor: item === color ? theme.node.activeStroke : "transparent", boxShadow: item === color ? `0 0 0 2px ${theme.node.activeStroke}` : undefined }}
                                     onPointerDown={(event) => event.stopPropagation()}
                                     onClick={(event) => {
@@ -227,29 +380,44 @@ function GroupToolbar({
                     ) : null}
                 </div>
 
-                <div className="relative">
-                    <ToolbarButton title="排列" onClick={() => onArrangeOpenChange(!arrangeOpen)}>
-                        <Grid2x2 className="size-4" />
-                    </ToolbarButton>
-                    {arrangeOpen ? (
-                        <div className="absolute bottom-10 left-0 z-30 w-32 rounded-xl border p-1.5 shadow-xl backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
-                            <MenuItem icon={<Grid2x2 className="size-4" />} label="宫格排列" onClick={() => onArrange("grid")} />
-                            <MenuItem icon={<Menu className="size-4" />} label="水平排列" onClick={() => onArrange("horizontal")} />
-                            <MenuItem icon={<List className="size-4" />} label="垂直排列" onClick={() => onArrange("vertical")} />
-                        </div>
-                    ) : null}
-                </div>
+                {!collapsed ? (
+                    <div className="relative">
+                        <ToolbarButton title="排列" onClick={() => onArrangeOpenChange(!arrangeOpen)}>
+                            <Grid2x2 className="size-4" />
+                        </ToolbarButton>
+                        {arrangeOpen ? (
+                            <div className="absolute bottom-10 left-0 z-30 w-32 rounded-xl border p-1.5 shadow-xl backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}>
+                                <MenuItem icon={<Grid2x2 className="size-4" />} label="宫格排列" onClick={() => onArrange("grid")} />
+                                <MenuItem icon={<Menu className="size-4" />} label="水平排列" onClick={() => onArrange("horizontal")} />
+                                <MenuItem icon={<List className="size-4" />} label="垂直排列" onClick={() => onArrange("vertical")} />
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
 
                 <Divider />
-                <ToolbarButton label="整组执行" onClick={onRun}>
-                    <Play className="size-4" />
+                <ToolbarButton label={collapsed ? "展开" : "折叠"} onClick={onToggleCollapsed}>
+                    {collapsed ? <Maximize2 className="size-4" /> : <Minimize2 className="size-4" />}
                 </ToolbarButton>
-                <ToolbarButton label="解组" onClick={onUngroup}>
-                    <Ungroup className="size-4" />
-                </ToolbarButton>
-                <ToolbarButton label="批量下载" onClick={onBatchDownload}>
-                    <Download className="size-4" />
-                </ToolbarButton>
+                {!collapsed ? (
+                    <ToolbarButton label="整组执行" onClick={onRun}>
+                        <Play className="size-4" />
+                    </ToolbarButton>
+                ) : null}
+                {workflow ? (
+                    <ToolbarButton label="删除工作流" onClick={onDelete}>
+                        <Trash2 className="size-4" />
+                    </ToolbarButton>
+                ) : (
+                    <ToolbarButton label="解组" onClick={onUngroup}>
+                        <Ungroup className="size-4" />
+                    </ToolbarButton>
+                )}
+                {!collapsed ? (
+                    <ToolbarButton label="批量下载" onClick={onBatchDownload}>
+                        <Download className="size-4" />
+                    </ToolbarButton>
+                ) : null}
             </div>
         </div>
     );
@@ -283,7 +451,7 @@ function ToolbarButton({ children, label, title, onClick }: { children: ReactNod
     return (
         <button
             type="button"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition hover:scale-[1.02]"
+            className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition hover:scale-[1.02]"
             style={{ color: theme.toolbar.item }}
             title={title || label}
             onPointerDown={(event) => event.stopPropagation()}
@@ -304,7 +472,7 @@ function MenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; on
     return (
         <button
             type="button"
-            className="flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs font-medium transition hover:scale-[1.01]"
+            className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-xs font-medium transition hover:scale-[1.01]"
             style={{ color: theme.toolbar.item }}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {

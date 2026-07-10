@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, resolveLocalModelApiRoute, resolveLocalModelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -17,7 +17,7 @@ function aiHeaders(config: AiConfig) {
               "Content-Type": "application/json",
           }
         : {
-              Authorization: `Bearer ${config.apiKey}`,
+              ...(config.apiKey.trim() ? { Authorization: `Bearer ${config.apiKey}` } : {}),
               "Content-Type": "application/json",
           };
 }
@@ -27,26 +27,28 @@ function refreshRemoteUser(config: AiConfig) {
 }
 
 export async function requestAudioGeneration(config: AiConfig, prompt: string): Promise<Blob> {
-    const model = (config.model || config.audioModel).trim();
-    assertAudioConfig(config, model);
-    const format = normalizeAudioFormatValue(config.audioFormat);
-    const instructions = config.audioInstructions.trim();
+    const requestConfig = resolveLocalModelConfig(config, config.model || config.audioModel);
+    const model = (requestConfig.model || requestConfig.audioModel).trim();
+    const route = resolveLocalModelApiRoute(requestConfig, model, ["/audio/speech"], "/audio/speech");
+    assertAudioConfig(requestConfig, model);
+    const format = normalizeAudioFormatValue(requestConfig.audioFormat);
+    const instructions = requestConfig.audioInstructions.trim();
 
     try {
         const response = await axios.post<Blob>(
-            aiApiUrl(config, "/audio/speech"),
+            aiApiUrl(requestConfig, route),
             {
                 model,
                 input: prompt,
-                voice: normalizeAudioVoiceValue(config.audioVoice),
+                voice: normalizeAudioVoiceValue(requestConfig.audioVoice),
                 response_format: format,
-                speed: Number(normalizeAudioSpeedValue(config.audioSpeed)),
+                speed: Number(normalizeAudioSpeedValue(requestConfig.audioSpeed)),
                 ...(instructions ? { instructions } : {}),
             },
-            { headers: aiHeaders(config), responseType: "blob" },
+            { headers: aiHeaders(requestConfig), responseType: "blob" },
         );
         await assertAudioBlob(response.data);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
     } catch (error) {
         throw new Error(readAxiosError(error, "音频生成失败"));
@@ -61,7 +63,6 @@ export async function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<U
 function assertAudioConfig(config: AiConfig, model: string) {
     if (!model) throw new Error("请先配置音频模型");
     if (config.channelMode === "local" && !config.baseUrl.trim()) throw new Error("请先配置 Base URL");
-    if (config.channelMode === "local" && !config.apiKey.trim()) throw new Error("请先配置 API Key");
 }
 
 async function assertAudioBlob(blob: Blob) {

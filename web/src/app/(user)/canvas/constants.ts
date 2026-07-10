@@ -8,7 +8,7 @@ type CanvasNodeSpec = {
     metadata?: CanvasNodeMetadata;
 };
 
-const SCRIPT_AGENT_INSTRUCTION = `你是专业影视编剧和小说改编编剧。你可以根据故事设定从零创作剧本，也可以把用户提供的小说、故事梗概或片段改编为标准剧本。
+export const SCRIPT_AGENT_DEFAULT_INSTRUCTION = `你是专业影视编剧和小说改编编剧。你可以根据故事设定从零创作剧本，也可以把用户提供的小说、故事梗概或片段改编为标准剧本。
 
 请严格读取上游故事设定中的主题、题材、视觉风格、关键元素、时长和故事简述，并保持故事逻辑清晰、人物动机明确、画面可拍摄。
 
@@ -25,7 +25,7 @@ const SCRIPT_AGENT_INSTRUCTION = `你是专业影视编剧和小说改编编剧�
 
 如果输入内容是小说，请保留核心人物关系、冲突和关键情节，但改写为适合影像表达的剧本语言。`;
 
-const CHARACTER_AGENT_INSTRUCTION = `你是专业影视美术设定和角色设定师。请根据上游故事设定、剧本或用户输入，提取并创作适合进入角色板的内容。
+export const CHARACTER_AGENT_DEFAULT_INSTRUCTION = `你是专业影视美术设定和角色设定师。请根据上游故事设定、剧本或用户输入，提取并创作适合进入角色板的内容。
 
 请只输出合法 JSON，不要使用 Markdown 代码块，不要输出额外解释。JSON 结构必须是：
 {
@@ -42,7 +42,7 @@ const CHARACTER_AGENT_INSTRUCTION = `你是专业影视美术设定和角色设�
 
 角色、场景、道具都可以为空数组，但请尽量从输入中提取完整。名称要简洁，描述要便于美术和生图理解。`;
 
-const STORYBOARD_AGENT_INSTRUCTION = `你是专业短剧分镜导演。请根据上游故事设定、剧本、角色板或用户输入，拆解出适合进入分镜板的镜头。
+export const STORYBOARD_AGENT_DEFAULT_INSTRUCTION = `你是专业短剧分镜导演。请根据上游故事设定、剧本、角色板或用户输入，拆解出适合进入分镜板的镜头。
 如果上游连接了角色板，请把角色板中的角色、场景、道具视为可用主体库。每个镜头的 references 必须优先使用角色板里的主体名称，不要随意改名；没有明确主体时返回空数组。
 
 请只输出合法 JSON，不要使用 Markdown 代码块，不要输出额外解释。JSON 结构必须是：
@@ -102,15 +102,15 @@ export const NODE_SPECS = {
     },
     [CanvasNodeType.ScriptAgent]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.ScriptAgent],
-        metadata: { status: "idle", agentName: "剧本Agent", agentInstruction: SCRIPT_AGENT_INSTRUCTION, agentOutputFormat: "markdown" },
+        metadata: { status: "idle", agentName: "剧本Agent", agentOutputFormat: "markdown" },
     },
     [CanvasNodeType.CharacterAgent]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.CharacterAgent],
-        metadata: { status: "idle", agentName: "角色Agent", agentInstruction: CHARACTER_AGENT_INSTRUCTION, agentOutputFormat: "json" },
+        metadata: { status: "idle", agentName: "角色Agent", agentOutputFormat: "json" },
     },
     [CanvasNodeType.StoryboardAgent]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.StoryboardAgent],
-        metadata: { status: "idle", agentName: "分镜Agent", agentInstruction: STORYBOARD_AGENT_INSTRUCTION, agentOutputFormat: "json" },
+        metadata: { status: "idle", agentName: "分镜Agent", agentOutputFormat: "json" },
     },
     [CanvasNodeType.ProjectBrief]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.ProjectBrief],

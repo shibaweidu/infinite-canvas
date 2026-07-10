@@ -19,7 +19,8 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import { CanvasVideoReferencePanel } from "./canvas-video-reference-panel";
 import { clampVideoReferences, type NodeGenerationInput } from "./canvas-node-generation";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
-import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasTextMode, type CanvasVideoRefMode } from "../types";
+import { buildCanvasScopedConfig, resolveNodeStyleName } from "../utils/canvas-global-settings";
+import { CanvasNodeType, type CanvasGenerationMode, type CanvasGlobalSettings, type CanvasNodeData, type CanvasNodeMetadata, type CanvasTextMode, type CanvasVideoRefMode } from "../types";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
@@ -57,22 +58,24 @@ type CanvasNodePromptPanelProps = {
     promptExpandedClassName?: string;
     onSelectionChange?: (value: string, option?: CanvasPromptSelectOption) => void;
     onPromptChange: (nodeId: string, prompt: string) => void;
-    onConfigChange: (nodeId: string, patch: Partial<CanvasNodeData["metadata"]>) => void;
+    onConfigChange: (nodeId: string, patch: Partial<CanvasNodeMetadata>) => void;
     onGenerate: (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => void;
     mentionReferences?: CanvasResourceReference[];
     onReferenceUpload?: (nodeId: string, file: File, kind: "image" | "video") => void | Promise<void>;
     onReferenceInsert?: (nodeId: string, payload: InsertAssetPayload) => void | Promise<void>;
     onStoryboardShotSelect?: (sourceNodeId: string, shotId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
+    canvasGlobalSettings?: CanvasGlobalSettings;
 };
 
-export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded = false, keepPromptAfterSubmit = false, upstreamInputs = [], upstreamVideoRefs = [], storyboardShots = [], selectionLabel, selectionOptions, selectedSelectionValue, promptCollapsedClassName, promptExpandedClassName, mentionReferences = [], onPromptChange, onConfigChange, onGenerate, onReferenceUpload, onReferenceInsert, onSelectionChange, onStoryboardShotSelect, onImageSettingsOpenChange }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded = false, keepPromptAfterSubmit = false, upstreamInputs = [], upstreamVideoRefs = [], storyboardShots = [], selectionLabel, selectionOptions, selectedSelectionValue, promptCollapsedClassName, promptExpandedClassName, mentionReferences = [], onPromptChange, onConfigChange, onGenerate, onReferenceUpload, onReferenceInsert, onSelectionChange, onStoryboardShotSelect, onImageSettingsOpenChange, canvasGlobalSettings }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const modelCosts = useConfigStore((state) => state.publicSettings?.modelChannel.modelCosts);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = modeOverride || defaultMode(node.type);
-    const config = buildNodeConfig(globalConfig, node, mode);
+    const config = buildNodeConfig(globalConfig, canvasGlobalSettings, node, mode);
+    const effectiveStyleName = resolveNodeStyleName(node, canvasGlobalSettings, globalConfig.defaultStyleName);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
@@ -231,7 +234,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
                     {mode === "image" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} />
-                            <GenerationStylePicker value={node.metadata?.styleName || ""} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
+                            <GenerationStylePicker value={effectiveStyleName} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
@@ -244,7 +247,7 @@ export function CanvasNodePromptPanel({ node, isRunning, modeOverride, embedded 
                     ) : mode === "video" ? (
                         <>
                             <ModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="video" onMissingConfig={() => openConfigDialog(true)} />
-                            <GenerationStylePicker value={node.metadata?.styleName || ""} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
+                            <GenerationStylePicker value={effectiveStyleName} onChange={(styleName) => onConfigChange(node.id, { styleName })} compact className="inline-flex h-10 max-w-[150px] shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition hover:opacity-90" />
                             <CanvasVideoSettingsPopover config={config} buttonClassName="!h-10 !max-w-[170px] !justify-start !rounded-full !px-3" onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))} />
                         </>
                     ) : mode === "audio" ? (
@@ -376,22 +379,23 @@ function defaultMode(type: CanvasNodeData["type"]): CanvasNodeGenerationMode {
     return type === CanvasNodeType.Text || type === CanvasNodeType.Agent || type === CanvasNodeType.ScriptAgent || type === CanvasNodeType.CharacterAgent || type === CanvasNodeType.StoryboardAgent ? "text" : type === CanvasNodeType.Video ? "video" : type === CanvasNodeType.Audio ? "audio" : "image";
 }
 
-function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: CanvasNodeGenerationMode): AiConfig {
-    const defaultModel = mode === "image" ? globalConfig.imageModel : mode === "video" ? globalConfig.videoModel : mode === "audio" ? globalConfig.audioModel : globalConfig.textModel;
+function buildNodeConfig(globalConfig: AiConfig, canvasGlobalSettings: CanvasGlobalSettings | undefined, node: CanvasNodeData, mode: CanvasNodeGenerationMode): AiConfig {
+    const scopedConfig = buildCanvasScopedConfig(globalConfig, canvasGlobalSettings, mode);
+    const defaultModel = mode === "image" ? scopedConfig.imageModel : mode === "video" ? scopedConfig.videoModel : mode === "audio" ? scopedConfig.audioModel : scopedConfig.textModel;
     return {
-        ...globalConfig,
-        model: node.metadata?.model || defaultModel || (mode === "audio" ? defaultConfig.audioModel : globalConfig.model || defaultConfig.model),
-        quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
-        size: node.metadata?.size || globalConfig.size || defaultConfig.size,
-        videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
-        vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
-        videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
-        videoWatermark: node.metadata?.watermark || globalConfig.videoWatermark || defaultConfig.videoWatermark,
-        audioVoice: node.metadata?.audioVoice || globalConfig.audioVoice || defaultConfig.audioVoice,
-        audioFormat: node.metadata?.audioFormat || globalConfig.audioFormat || defaultConfig.audioFormat,
-        audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
-        audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
-        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        ...scopedConfig,
+        model: node.metadata?.model || defaultModel || (mode === "audio" ? defaultConfig.audioModel : scopedConfig.model || defaultConfig.model),
+        quality: node.metadata?.quality || scopedConfig.quality || defaultConfig.quality,
+        size: node.metadata?.size || scopedConfig.size || defaultConfig.size,
+        videoSeconds: node.metadata?.seconds || scopedConfig.videoSeconds || defaultConfig.videoSeconds,
+        vquality: node.metadata?.vquality || scopedConfig.vquality || defaultConfig.vquality,
+        videoGenerateAudio: node.metadata?.generateAudio || scopedConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
+        videoWatermark: node.metadata?.watermark || scopedConfig.videoWatermark || defaultConfig.videoWatermark,
+        audioVoice: node.metadata?.audioVoice || scopedConfig.audioVoice || defaultConfig.audioVoice,
+        audioFormat: node.metadata?.audioFormat || scopedConfig.audioFormat || defaultConfig.audioFormat,
+        audioSpeed: node.metadata?.audioSpeed || scopedConfig.audioSpeed || defaultConfig.audioSpeed,
+        audioInstructions: node.metadata?.audioInstructions || scopedConfig.audioInstructions || defaultConfig.audioInstructions,
+        count: String(node.metadata?.count || (mode === "image" ? scopedConfig.canvasImageCount || scopedConfig.count : scopedConfig.count) || defaultConfig.count),
     };
 }
 

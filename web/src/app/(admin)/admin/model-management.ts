@@ -1,61 +1,13 @@
 import type { AdminModelApiRoute, AdminModelChannel, AdminModelCost, AdminModelType, AdminProviderModel, AdminResolutionCost, AdminSettings } from "@/services/api/admin";
+import { modelApiRoutes } from "@/lib/model-api-routes";
 
-export const modelTypeOptions: Array<{ label: string; value: AdminModelType }> = [
-    { label: "文本", value: "text" },
-    { label: "图片", value: "image" },
-    { label: "视频", value: "video" },
-    { label: "音频", value: "audio" },
-];
-
-export const modelTypeLabels: Record<AdminModelType, string> = {
-    text: "文本",
-    image: "图片",
-    video: "视频",
-    audio: "音频",
-};
-
-export const modelApiRouteLabels: Record<string, string> = {
-    "/chat/completions": "Chat Completions",
-    "/images/generations": "Images Generations",
-    "/images/edits": "Images Edits",
-    "/responses": "Responses",
-    "/v1/async/generations": "Unified Async Generations",
-    "/v1/videos": "Newtoken Async",
-    "/video/generations": "Video Generations",
-    "/v1/video/create": "Yunwu Video Create",
-    "/videos": "Videos",
-    "/async/generations": "Async Generations",
-    "/video/create": "LNAPI Video Create",
-    "/audio/speech": "Audio Speech",
-};
+export { modelApiRouteLabels, modelApiRoutes, modelTypeLabels, modelTypeOptions } from "@/lib/model-api-routes";
 
 export const defaultImageCosts: AdminResolutionCost[] = [
     { resolution: "1k", credits: 10, enabled: true },
     { resolution: "2k", credits: 20, enabled: true },
     { resolution: "4k", credits: 40, enabled: true },
 ];
-
-export const modelApiRoutes: Record<AdminModelType, AdminModelApiRoute[]> = {
-    text: [{ path: "/chat/completions", enabled: true }],
-    image: [
-        { path: "/images/generations", enabled: true },
-        { path: "/images/edits", enabled: false },
-        { path: "/chat/completions", enabled: false },
-        { path: "/responses", enabled: false },
-        { path: "/v1/async/generations", enabled: false },
-        { path: "/v1/videos", enabled: false },
-    ],
-    video: [
-        { path: "/chat/completions", enabled: false },
-        { path: "/video/generations", enabled: true },
-        { path: "/v1/video/create", enabled: false },
-        { path: "/videos", enabled: false },
-        { path: "/v1/async/generations", enabled: false },
-        { path: "/async/generations", enabled: false },
-        { path: "/video/create", enabled: false },
-    ],
-    audio: [{ path: "/audio/speech", enabled: true }],
-};
 
 export const imageCreditResolutions: AdminResolutionCost[] = [
     { resolution: "1k", credits: 10, enabled: true },

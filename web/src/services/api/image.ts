@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { buildApiUrl, type AiConfig } from "@/stores/use-config-store";
+import { buildApiUrl, resolveLocalModelApiRoute, resolveLocalModelConfig, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
@@ -227,7 +227,7 @@ function aiHeaders(config: AiConfig, contentType?: string) {
               ...(contentType ? { "Content-Type": contentType } : {}),
           }
         : {
-              Authorization: `Bearer ${config.apiKey}`,
+              ...(config.apiKey.trim() ? { Authorization: `Bearer ${config.apiKey}` } : {}),
               ...(contentType ? { "Content-Type": contentType } : {}),
           };
 }
@@ -312,43 +312,45 @@ function normalizeToolCalls(items: ToolChatCallPayload[] | undefined): ResponseT
 }
 
 export async function requestGeneration(config: AiConfig, prompt: string) {
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestConfig = resolveLocalModelConfig(config, config.model);
+    const route = resolveLocalModelApiRoute(requestConfig, requestConfig.model, ["/images/generations", "/chat/completions", "/responses", "/v1/async/generations", "/v1/videos"], "/images/generations");
+    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(requestConfig.count)) || 1)));
+    const quality = normalizeQuality(requestConfig.quality);
+    const requestSize = resolveRequestSize(quality, requestConfig.size);
     try {
-        if (config.channelMode === "remote") {
+        if (requestConfig.channelMode === "remote") {
             const images = await submitAITask(
                 "/api/v1/ai-tasks/images/generations",
                 {
-                    model: config.model,
-                    prompt: withSystemPrompt(config, prompt),
+                    model: requestConfig.model,
+                    prompt: withSystemPrompt(requestConfig, prompt),
                     n,
                     ...(requestSize ? { size: requestSize } : {}),
                     response_format: "b64_json",
                     output_format: IMAGE_OUTPUT_FORMAT,
                 },
-                aiHeaders(config, "application/json"),
+                aiHeaders(requestConfig, "application/json"),
                 parseImagePayload,
             );
-            refreshRemoteUser(config);
+            refreshRemoteUser(requestConfig);
             return images;
         }
         const response = await axios.post<ImageApiResponse>(
-            aiApiUrl(config, "/images/generations"),
+            aiApiUrl(requestConfig, route),
             {
-                model: config.model,
-                prompt: withSystemPrompt(config, prompt),
+                model: requestConfig.model,
+                prompt: withSystemPrompt(requestConfig, prompt),
                 n,
                 ...(requestSize ? { size: requestSize } : {}),
                 response_format: "b64_json",
                 output_format: IMAGE_OUTPUT_FORMAT,
             },
             {
-                headers: aiHeaders(config, "application/json"),
+                headers: aiHeaders(requestConfig, "application/json"),
             },
         );
         const images = parseImagePayload(response.data);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -356,13 +358,15 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
 }
 
 export async function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask?: ReferenceImage) {
-    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
-    const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestConfig = resolveLocalModelConfig(config, config.model);
+    const route = resolveLocalModelApiRoute(requestConfig, requestConfig.model, ["/images/edits", "/images/generations", "/chat/completions", "/responses", "/v1/async/generations", "/v1/videos"], "/images/edits");
+    const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(requestConfig.count)) || 1)));
+    const quality = normalizeQuality(requestConfig.quality);
+    const requestSize = resolveRequestSize(quality, requestConfig.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     const formData = new FormData();
-    formData.set("model", config.model);
-    formData.set("prompt", withSystemPrompt(config, requestPrompt));
+    formData.set("model", requestConfig.model);
+    formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
     formData.set("response_format", "b64_json");
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);
@@ -374,14 +378,14 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
-        if (config.channelMode === "remote") {
-            const images = await submitAITask("/api/v1/ai-tasks/images/edits", formData, aiHeaders(config), parseImagePayload);
-            refreshRemoteUser(config);
+        if (requestConfig.channelMode === "remote") {
+            const images = await submitAITask("/api/v1/ai-tasks/images/edits", formData, aiHeaders(requestConfig), parseImagePayload);
+            refreshRemoteUser(requestConfig);
             return images;
         }
-        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/edits"), formData, { headers: aiHeaders(config) });
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, route), formData, { headers: aiHeaders(requestConfig) });
         const images = parseImagePayload(response.data);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
@@ -389,21 +393,23 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {
+    const requestConfig = resolveLocalModelConfig(config, config.model);
+    const route = resolveLocalModelApiRoute(requestConfig, requestConfig.model, ["/chat/completions", "/responses"], "/chat/completions");
     let buffer = "";
     let answer = "";
     let processedLength = 0;
 
     try {
         const response = await axios.post(
-            aiApiUrl(config, "/chat/completions"),
+            aiApiUrl(requestConfig, route),
             {
-                model: config.model,
-                messages: withSystemMessage(config, messages),
+                model: requestConfig.model,
+                messages: withSystemMessage(requestConfig, messages),
                 stream: true,
             },
             {
                 headers: {
-                    ...aiHeaders(config, "application/json"),
+                    ...aiHeaders(requestConfig, "application/json"),
                 } as Record<string, string>,
                 responseType: "text",
                 onDownloadProgress: (event) => {
@@ -446,23 +452,25 @@ export async function requestImageQuestion(config: AiConfig, messages: ChatCompl
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
-    refreshRemoteUser(config);
+    refreshRemoteUser(requestConfig);
     return answer || "没有返回内容";
 }
 
 export async function requestToolResponse(config: AiConfig, messages: ResponseInputMessage[], tools: ResponseFunctionTool[], toolChoice: ToolChoice = "auto", onDelta?: (text: string) => void): Promise<ToolResponseResult> {
+    const requestConfig = resolveLocalModelConfig(config, config.model || config.textModel);
+    const route = resolveLocalModelApiRoute(requestConfig, requestConfig.model || requestConfig.textModel, ["/chat/completions"], "/chat/completions");
     try {
         const response = await axios.post<ToolChatResponse>(
-            aiApiUrl(config, "/chat/completions"),
+            aiApiUrl(requestConfig, route),
             {
-                model: config.model || config.textModel,
-                messages: toChatCompletionMessages(withResponseSystemMessage(config, messages)),
+                model: requestConfig.model || requestConfig.textModel,
+                messages: toChatCompletionMessages(withResponseSystemMessage(requestConfig, messages)),
                 tools,
                 tool_choice: toChatToolChoice(toolChoice),
                 parallel_tool_calls: false,
             },
             {
-                headers: aiHeaders(config, "application/json"),
+                headers: aiHeaders(requestConfig, "application/json"),
             },
         );
         if (typeof response.data.code === "number" && response.data.code !== 0) throw new Error(response.data.msg || "请求失败");
@@ -470,19 +478,25 @@ export async function requestToolResponse(config: AiConfig, messages: ResponseIn
         const message = response.data.choices?.[0]?.message;
         const content = message?.content || "";
         if (content) onDelta?.(content);
-        refreshRemoteUser(config);
+        refreshRemoteUser(requestConfig);
         return { content, toolCalls: normalizeToolCalls(message?.tool_calls) };
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
 }
 
-export async function fetchImageModels(config: AiConfig) {
-    if (config.channelMode === "remote") return config.models;
+export async function fetchImageModels(config: AiConfig, model?: string) {
+    const requestConfig = resolveLocalModelConfig(config, model);
+    if (requestConfig.channelMode === "remote") return requestConfig.models;
+    return fetchLocalProviderModels(requestConfig.baseUrl, requestConfig.apiKey);
+}
+
+export async function fetchLocalProviderModels(baseUrl: string, apiKey: string) {
     try {
-        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
+        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(baseUrl, "/models"), {
             headers: {
-                Authorization: `Bearer ${config.apiKey}`,
+                ...(apiKey.trim() ? { Authorization: `Bearer ${apiKey}` } : {}),
+                "Cache-Control": "no-cache",
             },
         });
         return (response.data.data || [])

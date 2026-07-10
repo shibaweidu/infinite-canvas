@@ -1,32 +1,35 @@
 "use client";
 
 import { App, Button, Form, Input, Modal, Segmented, Select } from "antd";
-import { useState } from "react";
 
 import { GenerationStylePicker } from "@/components/generation-style-picker";
+import { LocalProviderManager } from "@/components/layout/local-provider-manager";
 import { ModelPicker } from "@/components/model-picker";
-import { fetchImageModels } from "@/services/api/image";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import {
+    normalizeLocalProviders,
+    useConfigStore,
+    useEffectiveConfig,
+    type AiConfig,
+    type ModelCapability,
+} from "@/stores/use-config-store";
+import { useThemeStore } from "@/stores/use-theme-store";
 
 type ModelGroup = {
     capability: ModelCapability;
     modelKey: "imageModel" | "videoModel" | "textModel" | "audioModel";
-    modelsKey: "imageModels" | "videoModels" | "textModels" | "audioModels";
     defaultLabel: string;
-    optionsLabel: string;
 };
 
 const modelGroups: ModelGroup[] = [
-    { capability: "image", modelKey: "imageModel", modelsKey: "imageModels", defaultLabel: "默认生图模型", optionsLabel: "生图模型可选项" },
-    { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", defaultLabel: "默认视频模型", optionsLabel: "视频模型可选项" },
-    { capability: "text", modelKey: "textModel", modelsKey: "textModels", defaultLabel: "默认文本模型", optionsLabel: "文本模型可选项" },
-    { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", defaultLabel: "默认音频模型", optionsLabel: "音频模型可选项" },
+    { capability: "image", modelKey: "imageModel", defaultLabel: "默认生图模型" },
+    { capability: "video", modelKey: "videoModel", defaultLabel: "默认视频模型" },
+    { capability: "text", modelKey: "textModel", defaultLabel: "默认文本模型" },
+    { capability: "audio", modelKey: "audioModel", defaultLabel: "默认音频模型" },
 ];
 
 export function AppConfigModal() {
     const { message } = App.useApp();
-    const [loadingModels, setLoadingModels] = useState(false);
     const config = useConfigStore((state) => state.config);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
@@ -34,60 +37,21 @@ export function AppConfigModal() {
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const publicSettings = useConfigStore((state) => state.publicSettings);
+    const dark = useThemeStore((state) => state.theme === "dark");
     const effectiveConfig = useEffectiveConfig();
     const modelChannel = publicSettings?.modelChannel;
     const allowCustomChannel = modelChannel?.allowCustomChannel === true;
     const effectiveMode = allowCustomChannel ? config.channelMode : "remote";
-    const modelConfig = effectiveMode === "remote" ? effectiveConfig : config;
-    const modelOptions = config.models.map((model) => ({ label: model, value: model }));
+    const localProviders = normalizeLocalProviders(config.localProviders);
+    const modelConfig = effectiveMode === "remote" ? effectiveConfig : { ...config, localProviders };
 
     const finishConfig = () => {
         setConfigDialogOpen(false);
-        if (effectiveMode === "local" && (!config.baseUrl.trim() || !config.apiKey.trim())) return;
+        if (effectiveMode === "local" && !localProviders.some((provider) => provider.enabled !== false && provider.baseUrl.trim())) return;
         if (!modelConfig.imageModel.trim() || !modelConfig.videoModel.trim() || !modelConfig.textModel.trim()) return;
         if (!allowCustomChannel && config.channelMode !== "remote") updateConfig("channelMode", "remote");
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
-    };
-
-    const refreshModels = async () => {
-        if (effectiveMode === "remote") return;
-        if (!config.baseUrl.trim() || !config.apiKey.trim()) {
-            message.error("请先填写 Base URL 和 API Key");
-            return;
-        }
-        setLoadingModels(true);
-        try {
-            const models = await fetchImageModels(config);
-            const imageModels = filterModelsByCapability(models, "image");
-            const videoModels = filterModelsByCapability(models, "video");
-            const textModels = filterModelsByCapability(models, "text");
-            const audioModels = filterModelsByCapability(models, "audio");
-            const nextImageModels = resolveNextCapabilityModels(config.imageModels, imageModels, models);
-            const nextVideoModels = resolveNextCapabilityModels(config.videoModels, videoModels, models);
-            const nextTextModels = resolveNextCapabilityModels(config.textModels, textModels, models);
-            const nextAudioModels = resolveNextCapabilityModels(config.audioModels, audioModels, models);
-            updateConfig("models", models);
-            updateConfig("imageModels", nextImageModels);
-            updateConfig("videoModels", nextVideoModels);
-            updateConfig("textModels", nextTextModels);
-            updateConfig("audioModels", nextAudioModels);
-            if (nextImageModels.length && !nextImageModels.includes(config.imageModel)) updateConfig("imageModel", nextImageModels[0]);
-            if (nextVideoModels.length && !nextVideoModels.includes(config.videoModel)) updateConfig("videoModel", nextVideoModels[0]);
-            if (nextTextModels.length && !nextTextModels.includes(config.textModel)) updateConfig("textModel", nextTextModels[0]);
-            if (nextAudioModels.length && !nextAudioModels.includes(config.audioModel)) updateConfig("audioModel", nextAudioModels[0]);
-            message.success("模型列表已更新");
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "读取模型失败");
-        } finally {
-            setLoadingModels(false);
-        }
-    };
-
-    const updateCapabilityModels = (group: ModelGroup, models: string[]) => {
-        const next = uniqueModels(models);
-        updateConfig(group.modelsKey, next);
-        if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
 
     return (
@@ -99,10 +63,15 @@ export function AppConfigModal() {
                 </div>
             }
             open={isConfigOpen}
-            width={960}
+            width={1220}
             centered
             onCancel={() => setConfigDialogOpen(false)}
-            styles={{ body: { maxHeight: "72vh", overflowY: "auto", paddingRight: 18 } }}
+            styles={{
+                content: { background: dark ? "#292929" : "#ffffff" },
+                header: { background: dark ? "#292929" : "#ffffff" },
+                body: { maxHeight: "78vh", overflowY: "auto", paddingRight: 18, background: dark ? "#292929" : "#ffffff" },
+                footer: { background: dark ? "#292929" : "#ffffff", borderTopColor: dark ? "#464646" : undefined },
+            }}
             footer={
                 <Button type="primary" onClick={finishConfig}>
                     完成
@@ -125,56 +94,12 @@ export function AppConfigModal() {
                             />
                         </Form.Item>
                     ) : null}
-                    {effectiveMode === "local" ? (
-                        <>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                <Form.Item label="Base URL" className="mb-4">
-                                    <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
-                                </Form.Item>
-                                <Form.Item label="API Key" className="mb-4">
-                                    <Input.Password value={config.apiKey} onChange={(event) => updateConfig("apiKey", event.target.value)} />
-                                </Form.Item>
-                            </div>
-                            <div className="mb-5 flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-800">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium">模型列表</div>
-                                    <div className="mt-1 text-xs text-stone-500">当前已保存 {config.models.length} 个模型</div>
-                                </div>
-                                <Button size="small" loading={loadingModels} onClick={() => void refreshModels()}>
-                                    拉取模型列表
-                                </Button>
-                            </div>
-                        </>
-                    ) : (
+                    {effectiveMode === "local" ? <LocalProviderManager /> : (
                         <div className="mb-5 rounded-lg border border-stone-200 p-3 text-sm text-stone-500 dark:border-stone-800">
                             <div className="font-medium text-stone-900 dark:text-stone-100">云端渠道</div>
                             <div className="mt-1">由系统后台渠道转发请求，当前可用 {modelChannel?.availableModels.length || 0} 个模型。</div>
                         </div>
                     )}
-                    {effectiveMode === "local" ? (
-                        <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                            <div className="mb-3">
-                                <div className="text-sm font-semibold">本地模型可选项</div>
-                                <div className="mt-1 text-xs text-stone-500">从已拉取模型中选择哪些模型可进入各类下拉。</div>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {modelGroups.map((group) => (
-                                    <Form.Item key={group.modelsKey} label={group.optionsLabel} className="mb-0">
-                                        <Select
-                                            mode="multiple"
-                                            showSearch
-                                            allowClear
-                                            maxTagCount="responsive"
-                                            placeholder={config.models.length ? `请选择${group.optionsLabel}` : "请先拉取模型列表"}
-                                            value={config[group.modelsKey]}
-                                            options={modelOptions}
-                                            onChange={(models) => updateCapabilityModels(group, models)}
-                                        />
-                                    </Form.Item>
-                                ))}
-                            </div>
-                        </section>
-                    ) : null}
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {modelGroups.map((group) => (
                             <Form.Item key={group.modelKey} label={group.defaultLabel} className="mb-4">
@@ -230,14 +155,4 @@ export function AppConfigModal() {
 
 function normalizeImageCount(value: string) {
     return String(Math.max(1, Math.min(15, Math.floor(Math.abs(Number(value)) || 3))));
-}
-
-function resolveNextCapabilityModels(current: string[], suggested: string[], allModels: string[]) {
-    const available = new Set(allModels);
-    const kept = uniqueModels(current).filter((model) => available.has(model));
-    return kept.length ? kept : suggested;
-}
-
-function uniqueModels(models: string[]) {
-    return Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
 }

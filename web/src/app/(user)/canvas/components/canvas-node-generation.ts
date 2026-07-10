@@ -62,7 +62,10 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     const referenceImages = inputs.map((input) => input.image).filter((image): image is ReferenceImage => Boolean(image));
     const referenceVideos = inputs.map((input) => input.video).filter((video): video is ReferenceVideo => Boolean(video));
     const referenceAudios = inputs.map((input) => input.audio).filter((audio): audio is ReferenceAudio => Boolean(audio));
-    const referencePrompt = withReferenceHint(upstreamText ? `${prompt}\n\n${upstreamText}` : prompt, inputs.filter((input) => input.type !== "text"));
+    const referencePrompt = withReferenceHint(
+        upstreamText ? `${prompt}\n\n${upstreamText}` : prompt,
+        inputs.filter((input) => input.type !== "text"),
+    );
 
     return {
         prompt: referencePrompt,
@@ -142,7 +145,10 @@ function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: s
 
 export function buildNodeGenerationInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): NodeGenerationInput[] {
     const targetNode = nodes.find((node) => node.id === nodeId);
-    return getGenerationResourceNodes(nodeId, nodes, connections).flatMap((node): NodeGenerationInput[] => {
+    const inputNodes = getGenerationResourceNodes(nodeId, nodes, connections);
+    const scriptSourceNode = readDirectScriptSourceNode(targetNode, nodes, connections);
+    const allInputNodes = scriptSourceNode && !inputNodes.some((node) => node.id === scriptSourceNode.id) ? [...inputNodes, scriptSourceNode] : inputNodes;
+    return allInputNodes.flatMap((node): NodeGenerationInput[] => {
         const storyboardShotText = readSelectedStoryboardShotText(targetNode, node);
         if (storyboardShotText) return [{ nodeId: node.id, type: "text" as const, title: node.title, text: storyboardShotText }];
         const image = readReferenceImage(node);
@@ -176,7 +182,8 @@ export async function hydrateNodeGenerationContext(context: NodeGenerationContex
 }
 
 function readNodeTextInput(node: CanvasNodeData) {
-    if (node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Agent || node.type === CanvasNodeType.ScriptAgent || node.type === CanvasNodeType.CharacterAgent || node.type === CanvasNodeType.StoryboardAgent) return node.metadata?.content || node.metadata?.prompt || "";
+    if (node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Agent || node.type === CanvasNodeType.ScriptAgent || node.type === CanvasNodeType.CharacterAgent || node.type === CanvasNodeType.StoryboardAgent)
+        return node.metadata?.content || node.metadata?.prompt || "";
     if (node.type === CanvasNodeType.ProjectBrief) return projectBriefText(node);
     if (node.type === CanvasNodeType.SubjectBoard) return subjectBoardText(node);
     if (node.type === CanvasNodeType.Storyboard) return storyboardText(node);
@@ -243,19 +250,18 @@ function storyboardText(node: CanvasNodeData) {
     return shots.map((shot) => `${shot.id}. ${shot.description}`).join("\n");
 }
 
+function readDirectScriptSourceNode(targetNode: CanvasNodeData | undefined, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    if (targetNode?.type !== CanvasNodeType.ScriptAgent) return null;
+    const sourceIds = connections.filter((connection) => connection.toNodeId === targetNode.id).map((connection) => connection.fromNodeId);
+    return sourceIds.map((sourceId) => nodes.find((node) => node.id === sourceId) || null).find((node): node is CanvasNodeData => Boolean(node && readNodeTextInput(node).trim())) || null;
+}
+
 function readSelectedStoryboardShotText(targetNode: CanvasNodeData | undefined, node: CanvasNodeData) {
     if (node.type !== CanvasNodeType.Storyboard) return "";
     if (targetNode?.metadata?.storyboardSourceNodeId !== node.id || !targetNode.metadata.storyboardShotId) return "";
     const shot = node.metadata?.storyboard?.shots.find((item) => item.id === targetNode.metadata?.storyboardShotId);
     if (!shot) return "";
-    return [
-        `镜头 ${shot.id}`,
-        shot.description ? `分镜描述：${shot.description}` : "",
-        shot.imagePrompt ? `分镜图提示词：${shot.imagePrompt}` : "",
-        shot.videoPrompt ? `视频提示词：${shot.videoPrompt}` : "",
-    ]
-        .filter(Boolean)
-        .join("\n");
+    return [`镜头 ${shot.id}`, shot.description ? `分镜描述：${shot.description}` : "", shot.imagePrompt ? `分镜图提示词：${shot.imagePrompt}` : "", shot.videoPrompt ? `视频提示词：${shot.videoPrompt}` : ""].filter(Boolean).join("\n");
 }
 
 function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {

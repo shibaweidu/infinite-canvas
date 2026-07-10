@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
-import { Check, FileVideo, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, Search, Trash2, Upload, Wand2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, FileVideo, Image as ImageIcon, Layers3, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, Search, Trash2, Upload, Wand2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { type CanvasBoardMediaEditorTarget, type CanvasMediaSlot, type CanvasNodeData, type CanvasNodeMetadata, type CanvasStoryboard, type CanvasStoryboardGenerationMode, type CanvasStoryboardReference, type CanvasStoryboardShot, type CanvasSubjectBoard, type CanvasSubjectBoardGroup, type CanvasSubjectBoardItem, type CanvasSubjectKind } from "../types";
@@ -30,7 +30,7 @@ const subjectIdPrefix: Record<CanvasSubjectKind, string> = {
 };
 
 const storyboardGridColumns = "48px minmax(180px,1.1fr) 150px minmax(190px,0.9fr) 180px minmax(190px,0.9fr) 180px";
-const storyboardFullscreenGridColumns = "52px minmax(260px,1fr) minmax(200px,.7fr) minmax(320px,1.15fr) minmax(460px,1.65fr) minmax(320px,1.15fr) minmax(460px,1.65fr)";
+const storyboardFullscreenGridColumns = "52px minmax(220px,1fr) minmax(160px,.6fr) minmax(240px,1fr) minmax(280px,1.15fr) minmax(240px,1fr) minmax(280px,1.15fr)";
 
 export function SubjectBoardNodeContent({ node, theme, onMetadataChange, onOpenMediaEditor, fullscreen }: BoardContentProps) {
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -218,7 +218,7 @@ export function StoryboardNodeContent({ node, theme, onMetadataChange, onOpenMed
     return (
         <BoardShell theme={theme} title="分镜板" meta={`${board.shots.length} 镜`} action={<BoardActionButton theme={theme} label="添加分镜" icon={<Plus className="size-3.5" />} onClick={addShot} />}>
             {board.shots.length ? (
-                <div className={fullscreen ? "w-full min-w-[1680px]" : "min-w-[1180px]"}>
+                <div className={fullscreen ? "w-full min-w-[1520px]" : "min-w-[1180px]"}>
                     <div
                         className="sticky top-0 z-20 grid gap-2 border-b px-2 pb-2 pt-1 text-[11px] font-semibold"
                         style={{ gridTemplateColumns: fullscreen ? storyboardFullscreenGridColumns : storyboardGridColumns, background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.muted }}
@@ -359,9 +359,9 @@ function StoryboardRow({ shot, displayIndex, theme, activePanelMode, editing, fu
                 </div>
             </div>
             <PromptTextCell theme={theme} fullscreen={fullscreen} placeholder="用于生成这一镜分镜图的提示词" value={shot.imagePrompt || ""} onChange={(imagePrompt) => onChange(shot.id, { imagePrompt })} />
-            <MediaSlotView theme={theme} fullscreen={fullscreen} slot={shot.image} kind="image" active={activePanelMode === "image"} onOpenPanel={() => onOpenPanel("image", shot.id)} onOpenEditor={() => onOpenMediaEditor?.("image")} onUpload={(url) => onChange(shot.id, { image: { status: "done", url }, imageHistory: [...(shot.imageHistory || []), { status: "done", url }] })} />
+            <MediaSlotView theme={theme} fullscreen={fullscreen} slot={shot.image} history={shot.imageHistory} kind="image" active={activePanelMode === "image"} onOpenPanel={() => onOpenPanel("image", shot.id)} onOpenEditor={() => onOpenMediaEditor?.("image")} onSelectVariant={(image) => onChange(shot.id, { image })} onUpload={(url) => onChange(shot.id, { image: { status: "done", url }, imageHistory: [...(shot.imageHistory || []), { status: "done", url }] })} />
             <PromptTextCell theme={theme} fullscreen={fullscreen} placeholder="用于生成这一镜视频的提示词" value={shot.videoPrompt || ""} onChange={(videoPrompt) => onChange(shot.id, { videoPrompt })} />
-            <MediaSlotView theme={theme} fullscreen={fullscreen} slot={shot.video} kind="video" active={activePanelMode === "video"} onOpenPanel={() => onOpenPanel("video", shot.id)} onOpenEditor={() => onOpenMediaEditor?.("video")} onUpload={(url) => onChange(shot.id, { video: { status: "done", url }, videoHistory: [...(shot.videoHistory || []), { status: "done", url }] })} />
+            <MediaSlotView theme={theme} fullscreen={fullscreen} slot={shot.video} history={shot.videoHistory} kind="video" active={activePanelMode === "video"} onOpenPanel={() => onOpenPanel("video", shot.id)} onOpenEditor={() => onOpenMediaEditor?.("video")} onSelectVariant={(video) => onChange(shot.id, { video })} onUpload={(url) => onChange(shot.id, { video: { status: "done", url }, videoHistory: [...(shot.videoHistory || []), { status: "done", url }] })} />
         </article>
     );
 }
@@ -407,17 +407,75 @@ function PromptTextCell({ theme, placeholder, value, fullscreen, onChange }: { t
     );
 }
 
-function MediaSlotView({ theme, slot, kind, active, fullscreen, onOpenPanel, onOpenEditor, onUpload }: { theme: Theme; slot?: CanvasMediaSlot; kind: "image" | "video"; active?: boolean; fullscreen?: boolean; onOpenPanel: () => void; onOpenEditor?: () => void; onUpload: (url: string) => void }) {
+function MediaSlotView({ theme, slot, history, kind, active, fullscreen, onOpenPanel, onOpenEditor, onSelectVariant, onUpload }: { theme: Theme; slot?: CanvasMediaSlot; history?: CanvasMediaSlot[]; kind: "image" | "video"; active?: boolean; fullscreen?: boolean; onOpenPanel: () => void; onOpenEditor?: () => void; onSelectVariant: (slot: CanvasMediaSlot) => void; onUpload: (url: string) => void }) {
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const variants = doneMediaItems(slot, history);
     const done = slot?.status === "done" && slot.url;
     const generating = slot?.status === "generating";
+    const currentUrl = done ? slot.url : "";
+    const showHistory = variants.length > 1;
+    const preview = generating ? (
+        <LoaderCircle className="size-7 animate-spin opacity-70" />
+    ) : done ? (
+        kind === "image" ? <img src={slot.url} alt="" className="h-full w-full object-cover" /> : <video src={slot.url} muted className="h-full w-full object-cover" data-canvas-no-zoom />
+    ) : kind === "image" ? (
+        <ImageIcon className="size-7 opacity-35" />
+    ) : (
+        <FileVideo className="size-7 opacity-35" />
+    );
+
     return (
         <div className="flex min-w-0 flex-col gap-2">
             <button type="button" className={`relative flex ${fullscreen ? "h-[304px]" : "aspect-video"} w-full items-center justify-center overflow-hidden rounded-lg border`} style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.placeholder }} onClick={onOpenEditor || onOpenPanel}>
-                {generating ? <LoaderCircle className="size-7 animate-spin opacity-70" /> : done ? kind === "image" ? <img src={slot.url} alt="分镜图" className="h-full w-full object-cover" /> : <video src={slot.url} muted className="h-full w-full object-cover" data-canvas-no-zoom /> : kind === "image" ? <ImageIcon className="size-7 opacity-35" /> : <FileVideo className="size-7 opacity-35" />}
+                {preview}
                 <span className="absolute right-2 top-2 grid size-7 place-items-center rounded-md border backdrop-blur" style={{ background: `${theme.toolbar.panel}d9`, borderColor: theme.toolbar.border, color: theme.node.text }}>
                     <Maximize2 className="size-3.5" />
                 </span>
+                {showHistory ? (
+                    <span className="absolute left-2 top-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full border px-1.5 text-[10px] font-semibold backdrop-blur" style={{ background: `${theme.toolbar.panel}d9`, borderColor: theme.toolbar.border, color: theme.node.text }}>
+                        {variants.length}
+                    </span>
+                ) : null}
             </button>
+            {showHistory ? (
+                <div className="relative">
+                    <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition hover:scale-[1.01]" style={buttonStyle(theme, historyOpen)} onClick={() => setHistoryOpen((value) => !value)} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                        <Layers3 className="size-3.5" />
+                        <span>{variants.length}</span>
+                        {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                    </button>
+                    {historyOpen ? (
+                        <div className="absolute left-0 top-8 z-30 max-h-52 w-full overflow-auto rounded-lg border p-2 shadow-2xl" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                            <div className="grid grid-cols-4 gap-2">
+                                {variants.map((item) => {
+                                    const selected = item.url === currentUrl;
+                                    return (
+                                        <button
+                                            key={item.url}
+                                            type="button"
+                                            className="relative aspect-video overflow-hidden rounded-md border transition hover:scale-[1.01]"
+                                            style={{ borderColor: selected ? theme.node.activeStroke : theme.node.stroke, boxShadow: selected ? `0 0 0 1px ${theme.node.activeStroke} inset` : "none" }}
+                                            onClick={() => {
+                                                onSelectVariant(item);
+                                                setHistoryOpen(false);
+                                            }}
+                                            onMouseDown={(event) => event.stopPropagation()}
+                                            onPointerDown={(event) => event.stopPropagation()}
+                                        >
+                                            {kind === "image" ? <img src={item.url} alt="" className="h-full w-full object-cover" /> : <video src={item.url} muted className="h-full w-full object-cover" data-canvas-no-zoom />}
+                                            {selected ? (
+                                                <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full" style={{ background: theme.node.activeStroke, color: theme.toolbar.activeText }}>
+                                                    <Check className="size-2.5" />
+                                                </span>
+                                            ) : null}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
             <div className="grid grid-cols-3 gap-1.5">
                 <BoardActionButton theme={theme} active={active} label={kind === "image" ? "生图" : "视频"} icon={<Wand2 className="size-3.5" />} onClick={onOpenPanel} />
                 <UploadButton theme={theme} accept={kind === "image" ? "image/*" : "video/*"} label="上传" onFile={onUpload} />
@@ -426,7 +484,6 @@ function MediaSlotView({ theme, slot, kind, active, fullscreen, onOpenPanel, onO
         </div>
     );
 }
-
 function BoardShell({ theme, title, meta, action, children }: { theme: Theme; title: string; meta: string; action?: ReactNode; children: ReactNode }) {
     return (
         <div className="flex h-full w-full flex-col overflow-hidden px-4 pb-4 pt-12" style={{ color: theme.node.text }}>
@@ -500,6 +557,12 @@ function UploadButton({ theme, accept, label, onFile }: { theme: Theme; accept: 
 
 function buttonStyle(theme: Theme, active?: boolean): CSSProperties {
     return { background: active ? theme.toolbar.activeBg : theme.node.fill, border: `1px solid ${active ? theme.node.activeStroke : theme.node.stroke}`, color: theme.node.text };
+}
+
+function doneMediaItems(current?: CanvasMediaSlot, history?: CanvasMediaSlot[]): Array<CanvasMediaSlot & { url: string }> {
+    const items = [...(history || [])];
+    if (current?.status === "done" && current.url) items.push(current);
+    return items.filter((item, index, list): item is CanvasMediaSlot & { url: string } => item.status === "done" && Boolean(item.url) && list.findIndex((candidate) => candidate.url === item.url) === index);
 }
 
 async function handleFileInput(file: File | undefined, onFile: (url: string) => void) {

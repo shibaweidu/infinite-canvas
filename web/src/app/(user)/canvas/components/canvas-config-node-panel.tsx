@@ -10,7 +10,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "./canvas-n
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import type { InsertAssetPayload } from "./asset-picker-modal";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
-import type { CanvasGenerationMode, CanvasNodeData, CanvasNodeMetadata } from "../types";
+import type { CanvasGenerationMode, CanvasGlobalSettings, CanvasNodeData, CanvasNodeMetadata } from "../types";
 
 type CanvasConfigNodePanelProps = {
     node: CanvasNodeData;
@@ -24,9 +24,23 @@ type CanvasConfigNodePanelProps = {
     onReferenceUpload?: (nodeId: string, file: File, kind: "image" | "video") => void | Promise<void>;
     onReferenceInsert?: (nodeId: string, payload: InsertAssetPayload) => void | Promise<void>;
     onImageSettingsOpenChange?: (open: boolean) => void;
+    canvasGlobalSettings?: CanvasGlobalSettings;
 };
 
-export function CanvasConfigNodePanel({ node, isRunning, inputs, upstreamVideoRefs, mentionReferences, onPromptChange, onConfigChange, onGenerate, onReferenceUpload, onReferenceInsert, onImageSettingsOpenChange }: CanvasConfigNodePanelProps) {
+export function CanvasConfigNodePanel({
+    node,
+    isRunning,
+    inputs,
+    upstreamVideoRefs,
+    mentionReferences,
+    onPromptChange,
+    onConfigChange,
+    onGenerate,
+    onReferenceUpload,
+    onReferenceInsert,
+    onImageSettingsOpenChange,
+    canvasGlobalSettings,
+}: CanvasConfigNodePanelProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const mode = node.metadata?.generationMode || "image";
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
@@ -97,10 +111,10 @@ export function CanvasConfigNodePanel({ node, isRunning, inputs, upstreamVideoRe
                 />
             </div>
             <div className="flex flex-wrap gap-1.5">
-                <InputChip label="提示词" value={`${inputSummary.textCount} 个`} style={chipStyle} />
+                <InputChip label="提示词" value={`${inputSummary.textCount} 条`} style={chipStyle} />
                 <InputChip label="参考图" value={`${inputSummary.imageCount} 张`} style={chipStyle} />
-                <InputChip label="参考视频" value={`${inputSummary.videoCount} 个`} style={chipStyle} />
-                <InputChip label="参考音频" value={`${inputSummary.audioCount} 个`} style={chipStyle} />
+                <InputChip label="参考视频" value={`${inputSummary.videoCount} 条`} style={chipStyle} />
+                <InputChip label="参考音频" value={`${inputSummary.audioCount} 条`} style={chipStyle} />
             </div>
             <CanvasNodePromptPanel
                 node={node}
@@ -117,6 +131,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputs, upstreamVideoRe
                 onReferenceUpload={onReferenceUpload}
                 onReferenceInsert={onReferenceInsert}
                 onImageSettingsOpenChange={onImageSettingsOpenChange}
+                canvasGlobalSettings={canvasGlobalSettings}
             />
         </div>
     );

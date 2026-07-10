@@ -86,7 +86,10 @@ type PublicModelChannelSetting struct {
 	DefaultVideoModel  string      `json:"defaultVideoModel"`
 	DefaultTextModel   string      `json:"defaultTextModel"`
 	SystemPrompt       string      `json:"systemPrompt"`
-	AllowCustomChannel *bool       `json:"allowCustomChannel"`
+	ScriptAgentInstruction     string      `json:"scriptAgentInstruction"`
+	CharacterAgentInstruction  string      `json:"characterAgentInstruction"`
+	StoryboardAgentInstruction string      `json:"storyboardAgentInstruction"`
+	AllowCustomChannel         *bool       `json:"allowCustomChannel"`
 }
 
 // ProjectBriefSetting 项目设定节点的公开选项配置。

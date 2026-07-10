@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Bot, ChevronRight, ChevronsDownUp, ChevronsUpDown, Image as ImageIcon, Maximize2, Music2, PenLine, RefreshCw, Star, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -338,15 +338,13 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {shortDramaNextLabel ? (
                     <button
                         type="button"
-                        className="absolute z-30 inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold opacity-90 backdrop-blur-md transition hover:opacity-100"
+                        className="absolute z-30 inline-flex h-5 cursor-pointer items-center gap-1 text-[9px] font-normal opacity-70 transition hover:opacity-95"
                         style={{
-                            top: `${-38 / safeScale}px`,
+                            top: `${-28 / safeScale}px`,
                             right: `${16 / safeScale}px`,
                             transform: `scale(${1 / safeScale})`,
                             transformOrigin: "right top",
-                            background: `${theme.toolbar.panel}dd`,
-                            borderColor: theme.node.stroke,
-                            color: theme.node.text,
+                            color: theme.node.muted,
                         }}
                         title={shortDramaNextLabel}
                         aria-label={shortDramaNextLabel}
@@ -358,7 +356,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onPointerDown={(event) => event.stopPropagation()}
                     >
                         <span>{shortDramaNextLabel}</span>
-                        <ChevronRight className="size-3.5" />
+                        <ChevronRight className="size-3" />
                     </button>
                 ) : null}
                 <div
@@ -444,15 +442,12 @@ function NodeTitleBar({ node, scale, theme, onRename }: { node: CanvasNodeData; 
     const [draft, setDraft] = useState(node.title || "");
     const safeScale = Math.max(scale, 0.05);
     const title = node.title || "未命名节点";
-    const titleMeasure = editing ? draft || title : title;
+    const titleMeasure = draft || title;
     const titleWidth = Math.max(72, Math.min(320, titleMeasure.length * 12 + 28));
-    const titleStyle = {
-        background: `${theme.toolbar.panel}dd`,
-        borderColor: theme.node.stroke,
-        color: theme.node.text,
-        top: `${-34 / safeScale}px`,
-        width: titleWidth,
-        maxWidth: "calc(100vw - 24px)",
+    const titleStyle: CSSProperties = {
+        color: editing ? theme.node.text : theme.node.muted,
+        top: `${(editing ? -34 : -28) / safeScale}px`,
+        ...(editing ? { width: titleWidth, maxWidth: "calc(100vw - 24px)" } : { width: "max-content", maxWidth: "none", whiteSpace: "nowrap" }),
         transform: `scale(${1 / safeScale})`,
         transformOrigin: "left top",
     };
@@ -478,7 +473,7 @@ function NodeTitleBar({ node, scale, theme, onRename }: { node: CanvasNodeData; 
             <input
                 autoFocus
                 className="absolute left-0 z-30 h-7 rounded-lg border px-2 text-xs font-semibold outline-none backdrop-blur"
-                style={titleStyle}
+                style={{ ...titleStyle, background: `${theme.toolbar.panel}dd`, borderColor: theme.node.stroke }}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onBlur={commit}
@@ -503,7 +498,7 @@ function NodeTitleBar({ node, scale, theme, onRename }: { node: CanvasNodeData; 
     return (
         <button
             type="button"
-            className="absolute left-0 z-30 inline-flex h-7 items-center rounded-lg border px-2 text-xs font-semibold backdrop-blur transition hover:opacity-100"
+            className="absolute left-0 z-30 inline-flex h-5 cursor-pointer items-center px-0 text-[9px] font-normal opacity-70 transition hover:opacity-95"
             style={titleStyle}
             title={node.title}
             onDoubleClick={(event) => {
@@ -512,7 +507,7 @@ function NodeTitleBar({ node, scale, theme, onRename }: { node: CanvasNodeData; 
                 setEditing(true);
             }}
         >
-            <span className="truncate">{title}</span>
+            <span className="whitespace-nowrap">{title}</span>
         </button>
     );
 }

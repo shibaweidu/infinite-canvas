@@ -83,6 +83,10 @@ func normalizePublicSetting(setting model.PublicSetting) model.PublicSetting {
 	for i := range setting.ModelChannel.ModelCosts {
 		setting.ModelChannel.ModelCosts[i] = normalizeModelCost(setting.ModelChannel.ModelCosts[i])
 	}
+	setting.ModelChannel.SystemPrompt = strings.TrimSpace(setting.ModelChannel.SystemPrompt)
+	setting.ModelChannel.ScriptAgentInstruction = strings.TrimSpace(setting.ModelChannel.ScriptAgentInstruction)
+	setting.ModelChannel.CharacterAgentInstruction = strings.TrimSpace(setting.ModelChannel.CharacterAgentInstruction)
+	setting.ModelChannel.StoryboardAgentInstruction = strings.TrimSpace(setting.ModelChannel.StoryboardAgentInstruction)
 	if setting.ModelChannel.AllowCustomChannel == nil {
 		enabled := true
 		setting.ModelChannel.AllowCustomChannel = &enabled

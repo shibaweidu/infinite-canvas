@@ -2,11 +2,12 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Check, ChevronDown, Cpu } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { resolveModelBrand } from "@/lib/model-brand";
 import { cn } from "@/lib/utils";
-import { modelOptionName, selectableModelsByCapability, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { modelOptionName, selectableLocalModelOptions, useConfigStore, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AdminModelCost, AdminModelType } from "@/services/api/admin";
 
@@ -32,6 +33,7 @@ type PickerModel = {
     description?: string;
     tags?: string[];
     type?: AdminModelType;
+    local?: boolean;
 };
 
 export function ModelPicker({ config, value, onChange, className, fullWidth = false, placeholder = "选择模型", onMissingConfig, capability, modelType }: ModelPickerProps) {
@@ -47,8 +49,7 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
     const allowLocal = publicSettings?.modelChannel.allowCustomChannel !== false;
     const pickerType = modelType || capability;
     const cloudModels = useMemo(() => buildCloudModels(publicSettings?.modelChannel.modelCosts || [], publicSettings?.modelChannel.availableModels || config.models, pickerType), [publicSettings, config.models, pickerType]);
-    const localModelOptions = useMemo(() => localSelectableModels(rawConfig, pickerType), [rawConfig, pickerType]);
-    const localModels = useMemo(() => (allowLocal ? buildLocalModels(localModelOptions, pickerType) : []), [allowLocal, localModelOptions, pickerType]);
+    const localModels = useMemo(() => (allowLocal ? buildLocalModels(rawConfig, pickerType) : []), [allowLocal, rawConfig, pickerType]);
     const current = value || "";
     const currentMeta = cloudModels.find((item) => item.model === current) || localModels.find((item) => item.model === current);
     const displayName = currentMeta ? displayModelName(currentMeta, current) : "";
@@ -206,7 +207,7 @@ function ModelCard({ model, selected, onClick }: { model: PickerModel; selected:
         <button
             type="button"
             className={cn(
-                "group grid min-h-[72px] grid-cols-[45px_minmax(0,1fr)] gap-2 rounded-[10px] border px-2 py-2 text-left transition-all",
+                "group grid min-h-[82px] grid-cols-[45px_minmax(0,1fr)] gap-2 rounded-[10px] border px-2 py-2 text-left transition-all",
                 selected ? "border-current/35 bg-current/10 shadow-[0_0_0_1px_rgba(255,255,255,0.05)]" : "border-current/10 hover:bg-current/5 active:border-current/35",
             )}
             onClick={onClick}
@@ -215,32 +216,37 @@ function ModelCard({ model, selected, onClick }: { model: PickerModel; selected:
             <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                 <div className="flex w-full min-w-0 items-center gap-1.5">
                     <div className="truncate text-[13px] font-medium">{title}</div>
-                    {provider ? <div className="shrink-0 rounded-full bg-current/10 px-1.5 py-0.5 text-[9px] font-medium">{provider}</div> : null}
                     {selected ? <Check className="ml-auto size-3.5 shrink-0" /> : null}
                 </div>
-                {model.tags?.length ? (
+                {model.local ? (
+                    <>
+                        <div className="w-full truncate text-[10px] opacity-65">供应商：{provider || "本地供应商"}</div>
+                        <div className="w-full truncate text-[10px] opacity-85">本地模型，不扣积分</div>
+                    </>
+                ) : model.tags?.length ? (
                     <div className="flex w-full min-w-0 flex-wrap items-center gap-1">
                         {model.tags.slice(0, 3).map((tag) => (
                             <div key={tag} className="max-w-full truncate rounded-full bg-current/10 px-1.5 py-0.5 text-[9px] opacity-80">{tag}</div>
                         ))}
                     </div>
                 ) : null}
-                {model.description ? <div className="line-clamp-2 w-full text-[10px] leading-4 opacity-80">{model.description}</div> : null}
+                {!model.local && model.description ? <div className="line-clamp-2 w-full text-[10px] leading-4 opacity-80">{model.description}</div> : null}
             </div>
         </button>
     );
 }
 
 function ModelAvatar({ model, fallback, selected = false, compact = false }: { model?: PickerModel; fallback: string; selected?: boolean; compact?: boolean }) {
-    const icon = model?.thumbnailUrl || resolveModelIcon(fallback);
+    const brand = resolveModelBrand(model?.upstreamModel || fallback, model?.providerDisplayName || model?.providerName);
+    const icon = model?.thumbnailUrl || brand.icon;
     if (compact) {
-        if (icon) return <img src={icon} alt="" className={cn("size-4 shrink-0 rounded-md object-contain", !model?.thumbnailUrl && "dark:invert")} />;
+        if (icon) return <img src={icon} alt="" className={cn("size-4 shrink-0 rounded-md object-contain", !model?.thumbnailUrl && brand.invertInDark && "dark:invert")} />;
         if (!fallback.trim()) return null;
-        return <Cpu className="size-4 shrink-0 opacity-70" />;
+        return <span className="flex size-4 shrink-0 items-center justify-center rounded bg-current/10 text-[7px] font-semibold">{brand.initials}</span>;
     }
     return (
         <div className="flex h-full min-h-[45px] w-[45px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-current/10">
-            {icon ? <img src={icon} alt="" className={cn("h-8 w-8 rounded-[9px] object-contain transition-all duration-300", selected ? "scale-[1.08]" : "group-hover:scale-[1.08]", !model?.thumbnailUrl && "dark:invert")} /> : <Cpu className="size-6 opacity-70" />}
+            {icon ? <img src={icon} alt="" className={cn("h-8 w-8 rounded-[9px] object-contain transition-all duration-300", selected ? "scale-[1.08]" : "group-hover:scale-[1.08]", !model?.thumbnailUrl && brand.invertInDark && "dark:invert")} /> : <span className="text-[11px] font-semibold opacity-75">{brand.initials}</span>}
         </div>
     );
 }
@@ -264,30 +270,22 @@ function buildCloudModels(costs: AdminModelCost[], availableModels: string[], mo
         }));
 }
 
-function buildLocalModels(models: string[], modelType?: AdminModelType) {
-    return Array.from(new Set(models.map((item) => item.trim()).filter(Boolean)))
-        .filter((model) => !modelType || inferModelType(model) === modelType)
-        .map((model) => ({ model, type: inferModelType(model) }));
-}
-
-function localSelectableModels(config: AiConfig, modelType?: AdminModelType) {
-    if (modelType) return selectableModelsByCapability(config, modelType);
-    return Array.from(new Set([...config.imageModels, ...config.videoModels, ...config.textModels, ...config.audioModels].map((model) => model.trim()).filter(Boolean)));
+function buildLocalModels(config: AiConfig, modelType?: AdminModelType) {
+    return selectableLocalModelOptions(config, modelType).map((item) => ({
+        model: item.value,
+        upstreamModel: item.model,
+        name: item.name,
+        type: item.type,
+        providerName: item.providerName,
+        providerDisplayName: item.providerName,
+        description: "本地模型，不扣积分",
+        tags: [],
+        local: true,
+    }));
 }
 
 function displayModelName(model: PickerModel | undefined, fallback: string) {
     return modelOptionName(model?.name?.trim() || model?.upstreamModel || fallback);
-}
-
-function resolveModelIcon(model: string) {
-    const name = model.toLowerCase();
-    if (name.includes("claude") || name.includes("anthropic")) return "/icons/claude.svg";
-    if (name.includes("gemini") || name.includes("google")) return "/icons/gemini.svg";
-    if (name.includes("gpt") || name.includes("openai")) return "/icons/openai.svg";
-    if (name.includes("grok")) return "/icons/grok.svg";
-    if (name.includes("deepseek")) return "/icons/deepseek.svg";
-    if (name.includes("glm")) return "/icons/glm.svg";
-    return "";
 }
 
 function inferModelType(model: string): AdminModelType {

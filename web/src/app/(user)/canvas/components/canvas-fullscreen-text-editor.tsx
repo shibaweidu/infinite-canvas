@@ -32,6 +32,7 @@ type CanvasFullscreenTextEditorProps = {
 export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, placeholder, format: externalFormat, theme, onChange, onRichChange, onFormatChange, onClose }: CanvasFullscreenTextEditorProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const lastHtmlRef = useRef("");
+    const selectionRangeRef = useRef<Range | null>(null);
     const richTextEnabled = htmlValue !== undefined || Boolean(onRichChange);
     const [format, setFormat] = useState<CanvasFullscreenTextFormat>({ textStyle: "body", fontSize: 16 });
 
@@ -48,19 +49,49 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
         }
     }, [externalFormat, htmlValue, open, richTextEnabled, value]);
 
-    const syncRichValue = useCallback(() => {
+    const isSelectionInsideEditor = useCallback((node: Node | null) => {
+        const editor = editorRef.current;
+        if (!editor || !node) return false;
+        return editor === node || editor.contains(node.nodeType === Node.TEXT_NODE ? node.parentNode : node);
+    }, []);
+
+    const storeSelectionRange = useCallback(() => {
+        if (typeof window === "undefined") return null;
+        const selection = window.getSelection();
+        if (!selection?.rangeCount) return null;
+        const range = selection.getRangeAt(0);
+        if (!isSelectionInsideEditor(range.commonAncestorContainer)) return null;
+        selectionRangeRef.current = range.cloneRange();
+        return range;
+    }, [isSelectionInsideEditor]);
+
+    const restoreSelectionRange = useCallback(() => {
+        if (typeof window === "undefined") return false;
+        const editor = editorRef.current;
+        const range = selectionRangeRef.current;
+        const selection = window.getSelection();
+        if (!editor || !range || !selection) return false;
+        editor.focus({ preventScroll: true });
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+    }, []);
+
+    const syncRichValue = useCallback((commitDom = false) => {
         const editor = editorRef.current;
         if (!editor) return;
         const nextHtml = sanitizeCanvasRichTextHtml(editor.innerHTML);
         const nextValue = editor.innerText.replace(/\u00a0/g, " ").replace(/\n$/, "");
         lastHtmlRef.current = nextHtml;
-        if (editor.innerHTML !== nextHtml) editor.innerHTML = nextHtml;
+        if (commitDom && editor.innerHTML !== nextHtml) editor.innerHTML = nextHtml;
         if (onRichChange) onRichChange(nextValue, nextHtml);
         else onChange(nextValue);
     }, [onChange, onRichChange]);
 
     const refreshSelectionFormat = useCallback(() => {
         if (!richTextEnabled || typeof document === "undefined") return;
+        const range = storeSelectionRange();
+        if (!range) return;
         const block = String(document.queryCommandValue("formatBlock") || "body").replace(/[<>]/g, "").toLowerCase();
         const textStyle = block === "h1" || block === "h2" || block === "h3" ? block : "body";
         setFormat((current) => ({
@@ -70,7 +101,7 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
             textBold: document.queryCommandState("bold"),
             textItalic: document.queryCommandState("italic"),
         }));
-    }, [richTextEnabled]);
+    }, [richTextEnabled, storeSelectionRange]);
 
     useEffect(() => {
         if (!open || !richTextEnabled || typeof document === "undefined") return;
@@ -82,14 +113,14 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
         (patch: CanvasFullscreenTextFormat) => {
             const editor = editorRef.current;
             if (!editor || typeof document === "undefined") return;
-            editor.focus();
+            restoreSelectionRange();
             if (patch.textStyle) document.execCommand("formatBlock", false, patch.textStyle === "body" ? "p" : patch.textStyle);
             if (patch.textBold !== undefined) document.execCommand("bold");
             if (patch.textItalic !== undefined) document.execCommand("italic");
             refreshSelectionFormat();
             syncRichValue();
         },
-        [refreshSelectionFormat, syncRichValue],
+        [refreshSelectionFormat, restoreSelectionRange, syncRichValue],
     );
 
     const handleFormatChange = useCallback(
@@ -112,7 +143,7 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
     if (!open || typeof document === "undefined") return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[240] flex flex-col" style={{ background: theme.canvas.background, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[1200] flex flex-col" style={{ background: theme.canvas.background, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
             <header className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                 <div className="truncate text-sm font-semibold">{title}</div>
                 <button type="button" className="grid size-9 place-items-center rounded-full border transition hover:scale-[1.03]" style={{ borderColor: theme.toolbar.border, background: theme.node.fill, color: theme.node.text }} onClick={onClose} aria-label="关闭全屏编辑" title="关闭全屏编辑">
@@ -131,8 +162,9 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
                             className="thin-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl border bg-transparent p-6 leading-7 outline-none empty:before:pointer-events-none empty:before:content-[attr(data-placeholder)] [&_b]:font-bold [&_br]:block [&_em]:italic [&_h1]:my-2 [&_h1]:text-[1.65em] [&_h1]:font-bold [&_h2]:my-2 [&_h2]:text-[1.35em] [&_h2]:font-bold [&_h3]:my-1.5 [&_h3]:text-[1.15em] [&_h3]:font-semibold [&_i]:italic [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-1 [&_strong]:font-bold [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6"
                             data-placeholder={placeholder || ""}
                             style={{ color: theme.node.text, background: externalFormat?.textBackground || theme.node.fill, borderColor: theme.toolbar.border }}
-                            onInput={syncRichValue}
-                            onBlur={syncRichValue}
+                            onInput={() => syncRichValue()}
+                            onBlur={() => syncRichValue(true)}
+                            onFocus={refreshSelectionFormat}
                             onKeyUp={refreshSelectionFormat}
                             onMouseUp={refreshSelectionFormat}
                             onWheel={(event) => event.stopPropagation()}

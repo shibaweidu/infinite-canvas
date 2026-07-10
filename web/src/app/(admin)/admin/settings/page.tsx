@@ -34,6 +34,9 @@ const emptySettings: AdminSettings = {
             defaultVideoModel: "",
             defaultTextModel: "",
             systemPrompt: "",
+            scriptAgentInstruction: "",
+            characterAgentInstruction: "",
+            storyboardAgentInstruction: "",
             allowCustomChannel: true,
         },
         projectBrief: {
@@ -611,6 +614,25 @@ export default function AdminSettingsPage() {
                                     <Col span={24}>
                                         <Form.Item name={["public", "modelChannel", "systemPrompt"]} label="系统提示词">
                                             <Input.TextArea rows={4} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Typography.Title level={5}>Agent 身份设定</Typography.Title>
+                                        <Typography.Text type="secondary">前台画布和 Agent 节点在未自定义时会优先读取这里的系统默认身份设定。</Typography.Text>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item name={["public", "modelChannel", "scriptAgentInstruction"]} label="剧本 Agent 默认身份设定">
+                                            <Input.TextArea rows={6} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item name={["public", "modelChannel", "characterAgentInstruction"]} label="角色 Agent 默认身份设定">
+                                            <Input.TextArea rows={6} />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item name={["public", "modelChannel", "storyboardAgentInstruction"]} label="分镜 Agent 默认身份设定">
+                                            <Input.TextArea rows={6} />
                                         </Form.Item>
                                     </Col>
                                     <Col span={24}>
@@ -1205,6 +1227,10 @@ function normalizePublicSetting(setting: Partial<AdminSettings["public"]> = {}):
             ...(setting.modelChannel || {}),
             availableModels: setting.modelChannel?.availableModels || [],
             modelCosts: normalizeModelCosts(setting.modelChannel?.modelCosts || []),
+            systemPrompt: setting.modelChannel?.systemPrompt?.trim() || "",
+            scriptAgentInstruction: setting.modelChannel?.scriptAgentInstruction?.trim() || "",
+            characterAgentInstruction: setting.modelChannel?.characterAgentInstruction?.trim() || "",
+            storyboardAgentInstruction: setting.modelChannel?.storyboardAgentInstruction?.trim() || "",
         },
         projectBrief: normalizeProjectBriefSetting(setting.projectBrief),
         auth: {
