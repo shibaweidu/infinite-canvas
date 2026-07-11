@@ -12,7 +12,7 @@ import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/vide
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
-import { applyGenerationStylePrompt, findGenerationStyle, prependStyleReference } from "@/lib/generation-style";
+import { applyGenerationStylePrompt, findGenerationStyle } from "@/lib/generation-style";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
@@ -3570,7 +3570,7 @@ function InfiniteCanvasPage() {
             const selectedStyle = mode === "image" || mode === "video" ? findGenerationStyle(visualStyles, sourceNode?.metadata?.styleName) : null;
             const styledGenerationContext =
                 selectedStyle && (mode === "image" || mode === "video")
-                    ? { ...generationContext, prompt: applyGenerationStylePrompt(generationContext.prompt, selectedStyle), referenceImages: prependStyleReference(selectedStyle, generationContext.referenceImages) }
+                    ? { ...generationContext, prompt: applyGenerationStylePrompt(generationContext.prompt, selectedStyle) }
                     : generationContext;
             const effectivePrompt = styledGenerationContext.prompt.trim();
             const markSourceStatus = sourceNode?.type !== CanvasNodeType.Image && !editingTextNode;
@@ -3592,7 +3592,7 @@ function InfiniteCanvasPage() {
                         isImageNode && sourceNode?.metadata?.content
                             ? [{ id: sourceNode.id, name: `${sourceNode.title || sourceNode.id}.png`, type: sourceNode.metadata.mimeType || "image/png", dataUrl: sourceNode.metadata.content, storageKey: sourceNode.metadata.storageKey }]
                             : [];
-                    const referenceImages = sourceReference.length ? prependStyleReference(selectedStyle, sourceReference) : styledGenerationContext.referenceImages;
+                    const referenceImages = sourceReference.length ? sourceReference : styledGenerationContext.referenceImages;
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
                     const generationMetadata = { ...buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages), styleName: selectedStyle?.name };
                     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
@@ -3956,7 +3956,7 @@ function InfiniteCanvasPage() {
             try {
                 const context = await hydrateNodeGenerationContext(buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, submittedPrompt));
                 const selectedStyle = findGenerationStyle(visualStyles, sourceNode.metadata?.styleName);
-                const styledContext = selectedStyle ? { ...context, prompt: applyGenerationStylePrompt(context.prompt, selectedStyle), referenceImages: prependStyleReference(selectedStyle, context.referenceImages) } : context;
+                const styledContext = selectedStyle ? { ...context, prompt: applyGenerationStylePrompt(context.prompt, selectedStyle) } : context;
                 const effectivePrompt = styledContext.prompt.trim();
                 if (!effectivePrompt) return;
 
@@ -4094,7 +4094,7 @@ function InfiniteCanvasPage() {
                 const selectedStyle = findGenerationStyle(visualStyles, panelNode.metadata?.styleName);
                 const styledContext =
                     selectedStyle && (mode === "image" || mode === "video")
-                        ? { ...context, prompt: applyGenerationStylePrompt(context.prompt, selectedStyle), referenceImages: prependStyleReference(selectedStyle, context.referenceImages) }
+                        ? { ...context, prompt: applyGenerationStylePrompt(context.prompt, selectedStyle) }
                         : context;
                 const effectivePrompt = styledContext.prompt.trim();
                 if (!effectivePrompt) return;

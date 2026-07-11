@@ -282,10 +282,10 @@ function StyleEditor({ categories, draft, onChange, onClose, onSave }: { categor
                         <Field label="风格名称">
                             <input className={inputClass} value={draft.name} placeholder="例如：电影感" onChange={(event) => onChange({ name: event.target.value })} />
                         </Field>
-                        <Field label="风格提示词">
-                            <textarea className={`${textareaClass} h-32 resize-none`} value={draft.prompt} placeholder="描述该风格要注入到下游提示词里的视觉要求" onChange={(event) => onChange({ prompt: event.target.value })} />
+                        <Field label="风格提示词（生成使用）">
+                            <textarea className={`${textareaClass} h-32 resize-none`} value={draft.prompt} placeholder="描述色彩、光影、材质、笔触、对比度、画面质感和情绪氛围" onChange={(event) => onChange({ prompt: event.target.value })} />
                         </Field>
-                        <Field label="风格封面">
+                        <Field label="风格封面（仅展示）">
                             <input className={inputClass} value={draft.coverUrl} placeholder="图片 URL 或上传后的 data URL" onChange={(event) => onChange({ coverUrl: event.target.value })} />
                         </Field>
                     </div>

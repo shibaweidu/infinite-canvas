@@ -16,7 +16,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/c
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { applyGenerationStylePrompt, findGenerationStyle, prependStyleReference } from "@/lib/generation-style";
+import { applyGenerationStylePrompt, findGenerationStyle } from "@/lib/generation-style";
 import type { AdminProjectVisualStyle } from "@/services/api/admin";
 import { requestEdit, requestGeneration } from "@/services/api/image";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
@@ -304,10 +304,9 @@ export default function WorkbenchPage() {
         const snapshot = { ...effectiveConfig, model, imageModel: model, count: "1" };
         const selectedStyle = findGenerationStyle(visualStyles, styleName);
         const styledText = applyGenerationStylePrompt(text, selectedStyle);
-        const styledReferences = prependStyleReference(selectedStyle, references);
         const images = await Promise.all(
             Array.from({ length: count }, async () => {
-                const result = styledReferences.length ? await requestEdit(snapshot, styledText, styledReferences) : await requestGeneration(snapshot, styledText);
+                const result = references.length ? await requestEdit(snapshot, styledText, references) : await requestGeneration(snapshot, styledText);
                 const image = result[0];
                 if (!image) throw new Error("接口没有返回图片");
                 const stored = await uploadImage(image.dataUrl);
@@ -324,7 +323,7 @@ export default function WorkbenchPage() {
             styleName: selectedStyle?.name,
             model,
             config: { model, imageModel: model, quality: effectiveConfig.quality, size: effectiveConfig.size, count: String(count) },
-            references: styledReferences,
+            references,
             durationMs: performance.now() - startedAt,
             successCount: images.length,
             failCount: 0,
@@ -342,8 +341,7 @@ export default function WorkbenchPage() {
         const videoConfig = buildVideoConfig(effectiveConfig, model);
         const selectedStyle = findGenerationStyle(visualStyles, styleName);
         const styledText = applyGenerationStylePrompt(text, selectedStyle);
-        const styledReferences = prependStyleReference(selectedStyle, references);
-        const stored = await storeGeneratedVideo(await requestVideoGeneration(videoConfig, styledText, styledReferences, videoReferences, audioReferences));
+        const stored = await storeGeneratedVideo(await requestVideoGeneration(videoConfig, styledText, references, videoReferences, audioReferences));
         const video = { id: nanoid(), url: stored.url, storageKey: stored.storageKey, durationMs: performance.now() - startedAt, width: stored.width || 1280, height: stored.height || 720, bytes: stored.bytes, mimeType: stored.mimeType };
         await videoLogStore.setItem(nanoid(), {
             id: nanoid(),
@@ -354,7 +352,7 @@ export default function WorkbenchPage() {
             styleName: selectedStyle?.name,
             model,
             config: { model, videoModel: model, size: videoConfig.size, vquality: videoConfig.vquality, videoSeconds: videoConfig.videoSeconds, videoGenerateAudio: videoConfig.videoGenerateAudio, videoWatermark: videoConfig.videoWatermark },
-            references: styledReferences,
+            references,
             videoReferences,
             audioReferences,
             durationMs: video.durationMs,
