@@ -242,6 +242,7 @@ export type CanvasGroup = {
     locked?: boolean;
     workflowId?: string;
     groupType?: "shortDramaWorkflow";
+    autoGroupKey?: string;
 };
 
 export type CanvasArrangeMode = "grid" | "horizontal" | "vertical";

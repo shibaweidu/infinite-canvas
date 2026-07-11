@@ -649,14 +649,15 @@ function CanvasRefreshShell() {
     );
 }
 
-function ConnectionCreateMenu({ pending, onCreate, onClose }: { pending: PendingConnectionCreate; onCreate: (type: ConnectionCreateNodeType) => void; onClose: () => void }) {
+function ConnectionCreateMenu({ pending, scale, onCreate, onClose }: { pending: PendingConnectionCreate; scale: number; onCreate: (type: ConnectionCreateNodeType) => void; onClose: () => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const fixedScale = 1 / Math.max(scale, 0.05);
     return (
         <div
             className="thin-scrollbar absolute z-[120] max-h-[min(720px,calc(100vh-32px))] w-[320px] overflow-y-auto rounded-[18px] border p-3 shadow-2xl backdrop-blur"
             data-connection-create-menu
             data-canvas-no-zoom
-            style={{ left: pending.position.x, top: pending.position.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+            style={{ left: pending.position.x, top: pending.position.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text, transform: `scale(${fixedScale})`, transformOrigin: "top left" }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
@@ -1040,6 +1041,21 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         if (selectedGroupId && (selectedNodeIds.size || selectedConnectionId)) setSelectedGroupId(null);
     }, [selectedConnectionId, selectedGroupId, selectedNodeIds]);
+
+    useEffect(() => {
+        const workflowIdByNodeId = new Map(nodes.map((node) => [node.id, nodeWorkflowId(node)]));
+        setGroups((prev) => {
+            let changed = false;
+            const next = prev.map((group) => {
+                if (group.groupType !== "shortDramaWorkflow" || !group.workflowId) return group;
+                const nodeIds = group.nodeIds.filter((nodeId) => workflowIdByNodeId.get(nodeId) === group.workflowId);
+                if (nodeIds.length === group.nodeIds.length) return group;
+                changed = true;
+                return { ...group, nodeIds };
+            });
+            return changed ? next : prev;
+        });
+    }, [nodes]);
 
     useEffect(() => {
         if (!shortDramaWorkflows.length) return;
@@ -1571,7 +1587,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 setNodes((prev) => [...prev, newNode]);
-                if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
+                if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
                 setConnections((prev) => (prev.some((conn) => conn.fromNodeId === connection.fromNodeId && conn.toNodeId === connection.toNodeId) ? prev : [...prev, { id: nanoid(), ...connection }]));
                 setSelectedNodeIds(new Set([newNode.id]));
                 setSelectedConnectionId(null);
@@ -1582,7 +1598,7 @@ function InfiniteCanvasPage() {
                 const workflowId = activeWorkflowIdRef.current || undefined;
                 const newNode = createScriptTextNode(getCanvasCenter(), nodesRef.current, workflowId ? { workflowId } : undefined);
                 setNodes((prev) => [...prev, newNode]);
-                if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
+                if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
                 setSelectedNodeIds(new Set([newNode.id]));
                 setSelectedConnectionId(null);
                 setDialogNodeId(newNode.id);
@@ -1592,7 +1608,7 @@ function InfiniteCanvasPage() {
                 const workflowId = activeWorkflowIdRef.current;
                 const newNode = createShortDramaNode(type, getCanvasCenter(), workflowId);
                 setNodes((prev) => [...prev, newNode]);
-                setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
+                setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, newNode.id])) } : group)));
                 setSelectedNodeIds(new Set([newNode.id]));
                 setSelectedConnectionId(null);
                 setDialogNodeId(newNode.id);
@@ -1715,7 +1731,7 @@ function InfiniteCanvasPage() {
 
             if (!nextNodes.length) return;
             setNodes((prev) => [...prev, ...nextNodes]);
-            if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, ...nextNodes.map((node) => node.id)])) } : group)));
+            if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, ...nextNodes.map((node) => node.id)])) } : group)));
             setConnections((prev) => {
                 const existing = new Set(prev.map((connection) => `${connection.fromNodeId}:${connection.toNodeId}`));
                 const unique = nextConnections.filter((connection) => {
@@ -2338,8 +2354,14 @@ function InfiniteCanvasPage() {
             const targetGroupByNodeId = new Map<string, string>();
 
             movedNodes.forEach((node) => {
+                const workflowId = nodeWorkflowId(node);
+                const workflowGroup = workflowId ? prev.find((group) => group.groupType === "shortDramaWorkflow" && group.workflowId === workflowId) : undefined;
+                if (workflowGroup) {
+                    targetGroupByNodeId.set(node.id, workflowGroup.id);
+                    return;
+                }
                 const center = { x: node.position.x + node.width / 2, y: node.position.y + node.height / 2 };
-                const target = [...prev].reverse().find((group) => isPointInGroup(center, group));
+                const target = [...prev].reverse().find((group) => !group.collapsed && !group.locked && group.groupType !== "shortDramaWorkflow" && isPointInGroup(center, group));
                 if (target) targetGroupByNodeId.set(node.id, target.id);
             });
 
@@ -3962,7 +3984,7 @@ function InfiniteCanvasPage() {
                         ),
                     );
                     setConnections((prev) => (prev.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === resultId) ? prev : [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: resultId }]));
-                    setGroups((prev) => upsertAutoCanvasGroup(prev, "分镜组", resultId, sourceNode));
+                    setGroups((prev) => upsertAutoCanvasGroup(prev, `storyboard:${nodeId}:image`, "分镜组", resultId, sourceNode));
                     return;
                 }
 
@@ -3998,7 +4020,7 @@ function InfiniteCanvasPage() {
                     ),
                 );
                 setConnections((prev) => (prev.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === resultId) ? prev : [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: resultId }]));
-                setGroups((prev) => upsertAutoCanvasGroup(prev, "视频组", resultId, sourceNode));
+                setGroups((prev) => upsertAutoCanvasGroup(prev, `storyboard:${nodeId}:video`, "视频组", resultId, sourceNode));
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "????";
                 message.error(errorDetails);
@@ -4264,7 +4286,7 @@ function InfiniteCanvasPage() {
                 if (finalAnswer.trim()) {
                     setConnections((prev) => (prev.some((connection) => connection.fromNodeId === nodeId && connection.toNodeId === resultId) ? prev : [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: resultId }]));
                     const workflowId = nodeWorkflowId(latestSource);
-                    if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, resultId])) } : group)));
+                    if (workflowId) setGroups((prev) => prev.map((group) => (group.workflowId === workflowId ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, resultId])) } : group)));
                 }
             } catch (error) {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
@@ -4888,7 +4910,7 @@ function InfiniteCanvasPage() {
                             onGroup={createGroupFromSelection}
                         />
                     ) : null}
-                    {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
+                    {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} scale={viewport.k} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
                 </InfiniteCanvas>
 
                 {canvasViewMode === "canvas" ? (
@@ -5875,7 +5897,9 @@ function getNodesBounds(nodes: CanvasNodeData[]) {
 }
 
 function isPointInGroup(point: Position, group: CanvasGroup) {
-    return point.x >= group.position.x && point.x <= group.position.x + group.width && point.y >= group.position.y && point.y <= group.position.y + group.height;
+    const width = group.collapsed ? COLLAPSED_GROUP_WIDTH : group.width;
+    const height = group.collapsed ? COLLAPSED_GROUP_HEIGHT : group.height;
+    return point.x >= group.position.x && point.x <= group.position.x + width && point.y >= group.position.y && point.y <= group.position.y + height;
 }
 
 function isNodeHiddenByCollapsedGroup(nodeId: string, groups: CanvasGroup[]) {
@@ -5889,10 +5913,10 @@ function nextGroupTitle(groups: CanvasGroup[]) {
     return `分组${index}`;
 }
 
-function upsertAutoCanvasGroup(groups: CanvasGroup[], title: string, nodeId: string, fallback: CanvasNodeData) {
-    const existing = groups.find((group) => group.title === title);
+function upsertAutoCanvasGroup(groups: CanvasGroup[], key: string, title: string, nodeId: string, fallback: CanvasNodeData) {
+    const existing = groups.find((group) => group.autoGroupKey === key);
     if (existing) {
-        return groups.map((group) => (group.id === existing.id ? { ...group, nodeIds: Array.from(new Set([...group.nodeIds, nodeId])) } : group));
+        return groups.map((group) => (group.id === existing.id ? { ...group, collapsed: false, nodeIds: Array.from(new Set([...group.nodeIds, nodeId])) } : group));
     }
     return [
         ...groups,
@@ -5903,6 +5927,7 @@ function upsertAutoCanvasGroup(groups: CanvasGroup[], title: string, nodeId: str
             position: { x: fallback.position.x, y: fallback.position.y },
             width: fallback.width,
             height: fallback.height,
+            autoGroupKey: key,
         },
     ];
 }

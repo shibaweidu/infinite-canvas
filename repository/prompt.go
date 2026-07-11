@@ -91,12 +91,6 @@ func ListPromptCategories() ([]model.PromptCategory, error) {
 	for i := range categories {
 		categories[i].UpdatedAt = updatedAt[categories[i].Category]
 	}
-	for category, updated := range updatedAt {
-		if _, ok := seen[category]; !ok {
-			seen[category] = len(categories)
-			categories = append(categories, model.PromptCategory{Category: category, Name: category, UpdatedAt: updated})
-		}
-	}
 	return categories, nil
 }
 

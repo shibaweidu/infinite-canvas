@@ -28,6 +28,8 @@ var promptCategories = []model.PromptCategory{
 	{Category: "youmind-nano-banana-pro", Name: "YouMind Nano Banana Pro", Description: "YouMind OpenLab 的 Nano Banana Pro 中文提示词分类", GithubURL: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts", Remote: true},
 }
 
+var removedPromptCategories = []string{"gpt-image-2-prompts", "awesome-gpt4o-image-prompts", "davidwu-gpt-image2-prompts"}
+
 var (
 	db     *gorm.DB
 	dbOnce sync.Once
@@ -84,6 +86,14 @@ func DB() (*gorm.DB, error) {
 			&model.SystemTask{},
 			&model.ErrorLog{},
 		)
+		if dbErr == nil {
+			dbErr = db.Transaction(func(tx *gorm.DB) error {
+				if err := tx.Where("category IN ?", removedPromptCategories).Delete(&model.Prompt{}).Error; err != nil {
+					return err
+				}
+				return tx.Where("category IN ?", removedPromptCategories).Delete(&model.PromptCategory{}).Error
+			})
+		}
 	})
 	return db, dbErr
 }
