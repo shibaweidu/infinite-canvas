@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Bold, Heading1, Heading2, Heading3, Italic, Palette, Pilcrow, X } from "lucide-react";
+import { Bold, Heading1, Heading2, Heading3, Italic, Palette, Pilcrow, Save, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { plainTextToCanvasRichTextHtml, sanitizeCanvasRichTextHtml } from "../utils/canvas-rich-text";
@@ -26,10 +26,11 @@ type CanvasFullscreenTextEditorProps = {
     onChange: (value: string) => void;
     onRichChange?: (value: string, htmlValue: string) => void;
     onFormatChange?: (patch: CanvasFullscreenTextFormat) => void;
+    onSave?: () => void;
     onClose: () => void;
 };
 
-export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, placeholder, format: externalFormat, theme, onChange, onRichChange, onFormatChange, onClose }: CanvasFullscreenTextEditorProps) {
+export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, placeholder, format: externalFormat, theme, onChange, onRichChange, onFormatChange, onSave, onClose }: CanvasFullscreenTextEditorProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const lastHtmlRef = useRef("");
     const selectionRangeRef = useRef<Range | null>(null);
@@ -143,12 +144,35 @@ export function CanvasFullscreenTextEditor({ open, title, value, htmlValue, plac
     if (!open || typeof document === "undefined") return null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[1200] flex flex-col" style={{ background: theme.canvas.background, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+        <div
+            className="fixed inset-0 z-[1200] flex flex-col"
+            style={{ background: theme.canvas.background, color: theme.node.text }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === "Escape") {
+                    event.preventDefault();
+                    onClose();
+                } else if (onSave && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault();
+                    onSave();
+                }
+            }}
+        >
             <header className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                 <div className="truncate text-sm font-semibold">{title}</div>
-                <button type="button" className="grid size-9 place-items-center rounded-full border transition hover:scale-[1.03]" style={{ borderColor: theme.toolbar.border, background: theme.node.fill, color: theme.node.text }} onClick={onClose} aria-label="关闭全屏编辑" title="关闭全屏编辑">
-                    <X className="size-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                    {onSave ? (
+                        <button type="button" className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm font-medium transition hover:opacity-85" style={{ borderColor: theme.node.activeStroke, background: theme.toolbar.activeBg, color: theme.toolbar.activeText }} onClick={onSave} title="保存（Ctrl/Command + Enter）">
+                            <Save className="size-4" />
+                            保存
+                        </button>
+                    ) : null}
+                    <button type="button" className="grid size-9 cursor-pointer place-items-center rounded-full border transition hover:scale-[1.03]" style={{ borderColor: theme.toolbar.border, background: theme.node.fill, color: theme.node.text }} onClick={onClose} aria-label={onSave ? "取消编辑" : "关闭全屏编辑"} title={onSave ? "取消编辑" : "关闭全屏编辑"}>
+                        <X className="size-4" />
+                    </button>
+                </div>
             </header>
             <div className="min-h-0 flex-1 overflow-hidden p-4">
                 <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-3">

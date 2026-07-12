@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Bot, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Music2, Play, Type, Video } from "lucide-react";
+import { Bot, Image as ImageIcon, LoaderCircle, Maximize2, Minimize2, Music2, Pencil, Play, RotateCcw, Type, Video } from "lucide-react";
 import { Button, Input, Segmented } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -12,8 +12,8 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasFullscreenTextEditor } from "./canvas-fullscreen-text-editor";
 import { CanvasPromptLibrary } from "./canvas-prompt-library";
 import type { NodeGenerationInput } from "./canvas-node-generation";
-import { buildCanvasScopedConfig, resolveAgentInstruction, resolveCanvasAgentDefaults } from "../utils/canvas-global-settings";
-import type { CanvasAgentOutputFormat, CanvasGlobalSettings, CanvasNodeData, CanvasNodeMetadata } from "../types";
+import { buildCanvasScopedConfig, resolveAgentInstructionState, resolveCanvasAgentDefaults, type CanvasAgentInstructionSource } from "../utils/canvas-global-settings";
+import { CanvasNodeType, type CanvasAgentOutputFormat, type CanvasGlobalSettings, type CanvasNodeData, type CanvasNodeMetadata } from "../types";
 
 type CanvasAgentNodePanelProps = {
     node: CanvasNodeData;
@@ -42,13 +42,15 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
     const systemAgentInstructions = useMemo(() => resolveCanvasAgentDefaults(publicModelChannel), [publicModelChannel]);
     const [prompt, setPrompt] = useState(node.metadata?.prompt || "");
     const [instructionEditorOpen, setInstructionEditorOpen] = useState(false);
+    const [instructionDraft, setInstructionDraft] = useState("");
     const [promptExpanded, setPromptExpanded] = useState(false);
     const credits = requestCreditCost({ channelMode: config.channelMode, modelCosts, model: config.model, mode: "text", count: 1 });
     const chipStyle = { background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text };
     const imageInputs = inputs.filter((input) => input.image);
     const textInputs = inputs.filter((input) => input.type === "text");
     const otherInputs = inputs.filter((input) => input.type !== "text" && !input.image);
-    const resolvedInstruction = resolveAgentInstruction(node.type, node.metadata?.agentInstruction, canvasGlobalSettings, systemAgentInstructions);
+    const instructionState = resolveAgentInstructionState(node.type, node.metadata?.agentInstruction, canvasGlobalSettings, systemAgentInstructions);
+    const resolvedInstruction = instructionState.value;
     const canRun = Boolean(prompt.trim() || resolvedInstruction.trim() || inputs.length);
 
     useEffect(() => {
@@ -65,20 +67,42 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
         onRun(node.id, prompt.trim() || "请根据智能体身份设定和上游输入完成本次任务。");
     };
 
+    const openInstructionEditor = () => {
+        setInstructionDraft(resolvedInstruction);
+        setInstructionEditorOpen(true);
+    };
+
+    const saveInstruction = () => {
+        onConfigChange(node.id, { agentInstruction: instructionDraft.trim() || undefined });
+        setInstructionEditorOpen(false);
+    };
+
     return (
         <div className="rounded-2xl border p-3 shadow-2xl backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
-            <div className="mb-2 rounded-xl border px-3 py-2 text-sm font-semibold" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
-                智能体身份设定
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
+                <div>
+                    <div className="text-sm font-semibold">智能体身份设定</div>
+                    <div className="mt-0.5 text-[11px]" style={{ color: theme.node.muted }}>当前来源：{agentInstructionSourceLabel(instructionState.source)}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                    {instructionState.source === "node" ? (
+                        <Button size="small" type="text" icon={<RotateCcw className="size-3.5" />} onClick={() => onConfigChange(node.id, { agentInstruction: undefined })}>
+                            恢复跟随画布
+                        </Button>
+                    ) : null}
+                    <Button size="small" icon={<Pencil className="size-3.5" />} onClick={openInstructionEditor}>
+                        编辑当前节点
+                    </Button>
+                </div>
             </div>
 
-            <div className="relative mb-2">
+            <div className="mb-2">
                 <Input.TextArea
-                    className="thin-scrollbar !h-20 !resize-none !rounded-xl !pr-10 !text-sm !leading-5"
+                    className="thin-scrollbar !h-20 !resize-none !rounded-xl !text-sm !leading-5"
                     value={resolvedInstruction}
+                    readOnly
                     placeholder="输入智能体身份、能力边界和输出要求"
-                    onChange={(event) => onConfigChange(node.id, { agentInstruction: event.target.value })}
                 />
-                <FullscreenTextButton theme={theme} label="智能体身份设定" onClick={() => setInstructionEditorOpen(true)} />
             </div>
 
             <div className="relative">
@@ -138,7 +162,7 @@ export function CanvasAgentNodePanel({ node, isRunning, inputSummary, inputs, on
                     </span>
                 </Button>
             </div>
-            <CanvasFullscreenTextEditor open={instructionEditorOpen} title="智能体身份设定" value={resolvedInstruction} placeholder="输入智能体身份、能力边界和输出要求" theme={theme} onChange={(agentInstruction) => onConfigChange(node.id, { agentInstruction })} onClose={() => setInstructionEditorOpen(false)} />
+            <CanvasFullscreenTextEditor open={instructionEditorOpen} title={`${agentNodeTitle(node)} · 当前节点`} value={instructionDraft} placeholder="输入智能体身份、能力边界和输出要求" theme={theme} onChange={setInstructionDraft} onSave={saveInstruction} onClose={() => setInstructionEditorOpen(false)} />
         </div>
     );
 }
@@ -169,27 +193,24 @@ function ExpandTextButton({ theme, expanded, label, onClick }: { theme: (typeof 
     );
 }
 
-function FullscreenTextButton({ theme, label, onClick }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; label: string; onClick: () => void }) {
-    return (
-        <button
-            type="button"
-            className="absolute right-2 top-2 z-20 grid size-7 place-items-center rounded-md border transition hover:scale-[1.03]"
-            style={{ background: `${theme.toolbar.panel}e6`, borderColor: theme.toolbar.border, color: theme.node.text }}
-            title={`全屏编辑${label}`}
-            aria-label={`全屏编辑${label}`}
-            onClick={onClick}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-        >
-            <Maximize2 className="size-3.5" />
-        </button>
-    );
-}
-
 function buildAgentConfig(globalConfig: AiConfig, canvasGlobalSettings: CanvasGlobalSettings | undefined, node: CanvasNodeData): AiConfig {
     const scopedConfig = buildCanvasScopedConfig(globalConfig, canvasGlobalSettings, "text");
     return {
         ...scopedConfig,
         model: node.metadata?.model || scopedConfig.textModel || scopedConfig.model || defaultConfig.model,
     };
+}
+
+function agentInstructionSourceLabel(source: CanvasAgentInstructionSource) {
+    if (source === "node") return "节点自定义";
+    if (source === "canvas") return "画布默认";
+    if (source === "system") return "系统默认";
+    return "未设置";
+}
+
+function agentNodeTitle(node: CanvasNodeData) {
+    if (node.type === CanvasNodeType.ScriptAgent) return "剧本 Agent 身份设定";
+    if (node.type === CanvasNodeType.CharacterAgent) return "角色 Agent 身份设定";
+    if (node.type === CanvasNodeType.StoryboardAgent) return "分镜 Agent 身份设定";
+    return `${node.title || "智能体"}身份设定`;
 }

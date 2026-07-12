@@ -5,6 +5,8 @@ import { CanvasNodeType, type CanvasGenerationMode, type CanvasGlobalSettings, t
 
 export type CanvasAgentInstructionKey = "scriptInstruction" | "characterInstruction" | "storyboardInstruction";
 export type CanvasAgentInstructionMap = Record<CanvasAgentInstructionKey, string>;
+export type CanvasAgentInstructionSource = "node" | "canvas" | "system" | "unset";
+export type CanvasAgentInstructionState = { value: string; source: CanvasAgentInstructionSource };
 
 type CanvasAgentDefaultsSource = Pick<AdminPublicModelChannelSettings, "scriptAgentInstruction" | "characterAgentInstruction" | "storyboardAgentInstruction">;
 
@@ -46,11 +48,16 @@ export function resolveCanvasAgentDefaults(modelChannel?: Partial<CanvasAgentDef
 }
 
 export function resolveAgentInstruction(type: CanvasNodeType, instruction: string | undefined, settings: CanvasGlobalSettings | undefined, systemDefaults = resolveCanvasAgentDefaults()) {
+    return resolveAgentInstructionState(type, instruction, settings, systemDefaults).value;
+}
+
+export function resolveAgentInstructionState(type: CanvasNodeType, instruction: string | undefined, settings: CanvasGlobalSettings | undefined, systemDefaults = resolveCanvasAgentDefaults()): CanvasAgentInstructionState {
     const nodeInstruction = instruction?.trim() || "";
+    if (nodeInstruction) return { value: nodeInstruction, source: "node" as const };
+    if (!isSpecializedAgent(type)) return { value: "", source: "unset" as const };
     const canvasInstruction = agentInstructionFromSettings(type, settings);
-    if (!isSpecializedAgent(type)) return nodeInstruction;
-    if (nodeInstruction && !isBuiltInAgentInstruction(type, nodeInstruction, systemDefaults)) return nodeInstruction;
-    return canvasInstruction || agentInstructionFromDefaults(type, systemDefaults);
+    if (canvasInstruction) return { value: canvasInstruction, source: "canvas" as const };
+    return { value: agentInstructionFromDefaults(type, systemDefaults), source: "system" as const };
 }
 
 export function normalizeCanvasGlobalSettings(settings: CanvasGlobalSettings): CanvasGlobalSettings | undefined {
@@ -110,15 +117,4 @@ function agentInstructionFromDefaults(type: CanvasNodeType, defaults: CanvasAgen
     if (type === CanvasNodeType.CharacterAgent) return defaults.characterInstruction;
     if (type === CanvasNodeType.StoryboardAgent) return defaults.storyboardInstruction;
     return "";
-}
-
-function hardcodedAgentInstruction(type: CanvasNodeType) {
-    if (type === CanvasNodeType.ScriptAgent) return SCRIPT_AGENT_DEFAULT_INSTRUCTION;
-    if (type === CanvasNodeType.CharacterAgent) return CHARACTER_AGENT_DEFAULT_INSTRUCTION;
-    if (type === CanvasNodeType.StoryboardAgent) return STORYBOARD_AGENT_DEFAULT_INSTRUCTION;
-    return "";
-}
-
-function isBuiltInAgentInstruction(type: CanvasNodeType, value: string, systemDefaults: CanvasAgentInstructionMap) {
-    return value === agentInstructionFromDefaults(type, systemDefaults) || value === hardcodedAgentInstruction(type);
 }

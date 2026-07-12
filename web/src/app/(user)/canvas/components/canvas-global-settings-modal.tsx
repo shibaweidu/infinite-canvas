@@ -34,11 +34,13 @@ export function CanvasGlobalSettingsModal({ open, settings, onClose, onSave }: C
     const publicModelChannel = useConfigStore((state) => state.publicSettings?.modelChannel || null);
     const [draft, setDraft] = useState<CanvasGlobalSettings>(settings || emptySettings);
     const [fullscreenField, setFullscreenField] = useState<CanvasAgentInstructionKey | null>(null);
+    const [fullscreenValue, setFullscreenValue] = useState("");
 
     useEffect(() => {
         if (!open) return;
         setDraft(settings || emptySettings);
         setFullscreenField(null);
+        setFullscreenValue("");
     }, [open, settings]);
 
     const systemAgentInstructions = useMemo(() => resolveCanvasAgentDefaults(publicModelChannel), [publicModelChannel]);
@@ -54,14 +56,14 @@ export function CanvasGlobalSettingsModal({ open, settings, onClose, onSave }: C
     };
 
     const openAgentEditor = (key: CanvasAgentInstructionKey) => {
-        setDraft((current) => ({
-            ...current,
-            agents: {
-                ...(current.agents || {}),
-                [key]: current.agents?.[key] ?? systemAgentInstructions[key],
-            },
-        }));
+        setFullscreenValue(draft.agents?.[key]?.trim() || systemAgentInstructions[key]);
         setFullscreenField(key);
+    };
+
+    const saveAgentEditor = () => {
+        if (!fullscreenField) return;
+        updateAgent(fullscreenField, fullscreenValue);
+        setFullscreenField(null);
     };
 
     const resetAgent = (key: CanvasAgentInstructionKey) => {
@@ -122,10 +124,10 @@ export function CanvasGlobalSettingsModal({ open, settings, onClose, onSave }: C
                     <section className="rounded-2xl border p-4" style={{ borderColor: theme.toolbar.border, background: theme.node.fill }}>
                         <div className="mb-4">
                             <div className="text-sm font-semibold" style={{ color: theme.node.text }}>
-                                Agent 身份设定
+                                画布默认 Agent
                             </div>
                             <div className="mt-1 text-xs" style={{ color: theme.node.muted }}>
-                                只影响当前画布里的剧本 Agent、角色 Agent、分镜 Agent。直接在系统默认的基础上编辑，恢复默认后会清除当前画布的修改。
+                                未单独设置的 Agent 节点会使用这里；这里为空时继续使用后台系统默认。
                             </div>
                         </div>
                         <div className="grid gap-4">
@@ -219,11 +221,12 @@ export function CanvasGlobalSettingsModal({ open, settings, onClose, onSave }: C
             {open && fullscreenField ? (
                 <CanvasFullscreenTextEditor
                     open
-                    title={`${agentTitles[fullscreenField]}身份设定`}
-                    value={draft.agents?.[fullscreenField] || systemAgentInstructions[fullscreenField]}
+                    title={`${agentTitles[fullscreenField]}身份设定 · 当前画布`}
+                    value={fullscreenValue}
                     placeholder="输入身份设定、能力边界和输出要求"
                     theme={theme}
-                    onChange={(value) => updateAgent(fullscreenField, value)}
+                    onChange={setFullscreenValue}
+                    onSave={saveAgentEditor}
                     onClose={() => setFullscreenField(null)}
                 />
             ) : null}
@@ -254,16 +257,16 @@ function AgentInstructionField({
                         {title}
                     </div>
                     <div className="mt-1 text-[11px]" style={{ color: theme.node.muted }}>
-                        {hasOverride ? "已在系统默认基础上修改当前画布的身份设定。" : "当前使用系统默认身份设定。"}
+                        {hasOverride ? "当前画布已覆盖后台系统默认。" : "当前跟随后台系统默认。"}
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                    <StatusPill label="系统默认" theme={theme} />
+                    <StatusPill label={hasOverride ? "画布自定义" : "系统默认"} theme={theme} />
                     <Button size="small" type="text" onClick={onReset} disabled={!hasOverride}>
-                        恢复默认
+                        恢复系统默认
                     </Button>
                     <Button size="small" onClick={onEdit}>
-                        编辑
+                        编辑画布默认
                     </Button>
                 </div>
             </div>
